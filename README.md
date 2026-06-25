@@ -48,6 +48,10 @@ bun run dev
 ### 本番環境
 
 ```bash
+# 環境変数の設定（.env.example をコピーして編集）
+cp .env.example .env
+# .env を編集し、BASE_URLやパスワードなどを適切に設定してください
+
 # 起動
 bun run src/index.ts
 
