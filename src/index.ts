@@ -66,14 +66,6 @@ async function seedInitialData() {
     runSql(db, "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, 'admin')", id, config.adminUsername, passwordHash);
     console.log(`[INIT] Created admin user: ${config.adminUsername}`);
   }
-
-  const itemCount = getOne<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM items");
-  if ((itemCount?.cnt ?? 0) === 0) {
-    const defaultItems = ["ラーメン", "やきそば", "たこ焼き", "フランクフルト", "焼き鳥", "わたあめ", "りんご飴", "コーラ", "オレンジジュース", "お茶"];
-    const insert = db.prepare("INSERT INTO items (name, sort_order) VALUES (?, ?)");
-    defaultItems.forEach((name, i) => insert.run(name, i));
-    console.log(`[INIT] Created ${defaultItems.length} default items`);
-  }
 }
 
 await seedInitialData();
