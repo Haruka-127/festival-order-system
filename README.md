@@ -77,6 +77,18 @@ bun run dist/index.js
 
 **初回起動時に自動作成されます。本番環境では必ずパスワードを変更してください。**
 
+**注意**: パスワードは初回起動時に `ADMIN_PASSWORD` 環境変数の値がDBにハッシュ化されて保存されます。**既にadminが作成された後に環境変数を変更してもDBのパスワードは変わりません。** 変更するにはサーバー停止後に以下のコマンドを実行してください。
+
+```bash
+bun -e "
+const db = require('bun:sqlite').open('./data/orders.db');
+const hash = await Bun.password.hash('新しいパスワード');
+db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(hash, 'admin');
+console.log('Password updated');
+db.close();
+"
+```
+
 ### スタッフ（店員）アカウント
 
 管理画面の「ユーザー管理」から追加できます。初期状態ではスタッフアカウントは存在しません。
@@ -88,10 +100,10 @@ bun run dist/index.js
 | `PORT` | `3000` | サーバーのポート番号 |
 | `HOST` | `0.0.0.0` | サーバーのバインドアドレス |
 | `DATA_DIR` | `./data` | SQLiteデータベースの保存先ディレクトリ |
-| `BASE_URL` | `http://localhost:3000` | QRコードに埋め込むURLのベース |
+| `BASE_URL` | `http://localhost:3000` | QRコードに埋め込むURLのベース。リバースプロキシ使用時は必ず公開URL（例: `https://example.com`）に設定すること |
 | `SESSION_SECRET` | `festival-secret-...` | セッション管理用の秘密鍵 |
 | `ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
-| `ADMIN_PASSWORD` | `admin123` | 初期管理者パスワード |
+| `ADMIN_PASSWORD` | `admin123` | 初期管理者パスワード（初回起動時にのみ反映。既存DBのパスワード変更は上記のSQLite直接更新が必要） |
 | `DISPLAY_NUMBER_DIGITS` | `3` | 受付番号の桁数（例: 3→001） |
 | `NODE_ENV` | - | `production` でSecure Cookie有効 |
 
@@ -250,6 +262,8 @@ server {
 ```
 
 **重要**: WebSocketを使用するため、`Upgrade` と `Connection` ヘッダーの適切な転送が必要。
+
+**重要**: リバースプロキシ使用時は環境変数 `BASE_URL` に公開用URL（例: `https://example.com`）を必ず設定してください。未設定の場合、QRコードに `http://localhost:3000/...` が埋め込まれ、お客様がURLにアクセスできなくなります。
 
 ## プロセス管理（本番運用）
 
