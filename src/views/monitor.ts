@@ -7,41 +7,40 @@ export function monitorPage(): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>呼び出しモニター - 文化祭飲食システム</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#0f172a;color:#f1f5f9;overflow:hidden;height:100vh}
-    .monitor{display:flex;flex-direction:column;height:100vh;padding:20px}
-    .header{text-align:center;padding:10px 0 20px}
-    .header h1{font-size:2rem;font-weight:700;letter-spacing:2px}
-    .header p{font-size:1.1rem;color:#94a3b8;margin-top:4px}
-    .numbers-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;align-content:center;padding:10px}
-    .number-card{background:linear-gradient(135deg,#1e293b,#334155);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;border:2px solid #475569;transition:all .3s;min-height:140px}
-    .number-card .num{font-size:3.5rem;font-weight:800;line-height:1.1}
-    .number-card .label{font-size:0.9rem;color:#94a3b8;margin-top:4px}
-    .number-card.new{animation:pulse .5s ease-in-out 3;border-color:#22c55e;background:linear-gradient(135deg,#064e3b,#065f46)}
-    .number-card.new .num{color:#4ade80}
-    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#64748b}
-    .empty-state .icon{font-size:6rem;margin-bottom:20px}
-    .empty-state p{font-size:1.5rem}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#fff;color:#111827;overflow:hidden;height:100vh}
+    .monitor{display:flex;flex-direction:column;height:100vh;padding:32px 40px}
+    .header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:20px;border-bottom:1px solid #e5e7eb}
+    .header h1{font-size:2rem;font-weight:700;letter-spacing:0}
+    .header p{font-size:1.05rem;color:#6b7280;margin-top:4px}
+    .numbers-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;align-content:center;padding:28px 0}
+    .number-card{background:#fff;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px;border:2px solid #d1d5db;transition:border-color .2s,box-shadow .2s,transform .2s;min-height:148px}
+    .number-card .num{font-size:4rem;font-weight:800;line-height:1;color:#111827}
+    .number-card .label{font-size:0.85rem;color:#6b7280;margin-top:10px}
+    .number-card.new{animation:pulse .45s ease-in-out 3;border-color:#111827;box-shadow:0 0 0 4px #f3f4f6}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+    .empty-state{display:flex;align-items:center;justify-content:center;height:100%;min-height:240px;color:#6b7280;border:2px dashed #d1d5db;border-radius:8px;background:#fafafa}
+    .empty-state p{font-size:1.6rem;font-weight:600}
     @media(max-width:768px){
+      .monitor{padding:20px}
+      .header{display:block;padding-bottom:16px}
       .header h1{font-size:1.5rem}
-      .numbers-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
-      .number-card .num{font-size:2.5rem}
-      .number-card{min-height:100px}
+      .header p{font-size:0.95rem}
+      .numbers-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;padding:20px 0}
+      .number-card .num{font-size:3rem}
+      .number-card{min-height:112px}
     }
   </style>
 </head>
 <body>
   <div class="monitor">
     <div class="header">
-      <h1>🔔 お呼び出し</h1>
+      <h1>お呼び出し番号</h1>
       <p>商品のご準備ができました</p>
     </div>
     <div id="numbers-container" class="numbers-grid">
       <div class="empty-state">
-        <div class="icon">🍳</div>
         <p>ただいま準備中です</p>
       </div>
     </div>
@@ -82,7 +81,7 @@ export function monitorPage(): string {
     function renderNumbers(numbers) {
       const container = document.getElementById('numbers-container');
       if (!numbers.length) {
-        container.innerHTML = '<div class="empty-state"><div class="icon">🍳</div><p>ただいま準備中です</p></div>';
+        container.innerHTML = '<div class="empty-state"><p>ただいま準備中です</p></div>';
         return;
       }
 

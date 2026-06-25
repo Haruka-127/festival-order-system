@@ -7,6 +7,7 @@ import { staffRoutes } from "./routes/staff";
 import { adminRoutes } from "./routes/admin";
 import { monitorRoutes } from "./routes/monitor";
 import { customerRoutes } from "./routes/customer";
+import { notFoundPage } from "./views/components";
 
 const app = new Elysia()
   .get("/", () => new Response(null, { status: 302, headers: { Location: "/login" } }))
@@ -46,7 +47,12 @@ const app = new Elysia()
     },
   })
   .onError(({ code }) => {
-    if (code === "NOT_FOUND") return new Response(null, { status: 404 });
+    if (code === "NOT_FOUND") {
+      return new Response(notFoundPage(), {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
     console.error(`[ERROR] code=${code}`);
     return new Response("サーバーエラーが発生しました", { status: 500 });
   });

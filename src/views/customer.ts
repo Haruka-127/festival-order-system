@@ -14,44 +14,33 @@ export function customerPage(order: OrderData, token: string): string {
     delivered: "お渡し済み",
     cancelled: "キャンセル",
   };
-  const statusEmoji: Record<string, string> = {
-    preparing: "👨‍🍳",
-    available: "✅",
-    delivered: "🍽️",
-    cancelled: "❌",
-  };
-
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>注文状況 - 文化祭</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
-    .card{background:#fff;border-radius:24px;padding:32px 24px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-    .order-number{font-size:4rem;font-weight:800;color:#2563eb;line-height:1;margin:8px 0 4px}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#fff;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+    .card{background:#fff;border-radius:8px;padding:32px 24px;max-width:420px;width:100%;text-align:center;border:1px solid #e5e7eb;box-shadow:none}
+    .order-number{font-size:4rem;font-weight:800;color:#111827;line-height:1;margin:8px 0 4px}
     .order-label{font-size:1rem;color:#6b7280;margin-bottom:16px}
-    .status-display{display:flex;flex-direction:column;align-items:center;gap:8px;padding:24px 16px;border-radius:16px;margin:16px 0}
-    .status-display.preparing{background:#eff6ff}
-    .status-display.available{background:#f0fdf4;border:2px solid #22c55e;animation:availablePop .5s ease-out}
-    .status-display.cancelled{background:#fef2f2}
-    .status-display.delivered{background:#f0fdf4}
-    .status-emoji{font-size:3rem}
+    .status-display{display:flex;align-items:center;justify-content:center;padding:20px 16px;border:1px solid #d1d5db;border-radius:8px;margin:18px 0;background:#fff}
+    .status-display.available{border-color:#111827;animation:availablePop .5s ease-out}
+    .status-display.cancelled{border-color:#fecaca}
     .status-text{font-size:1.3rem;font-weight:700}
-    .status-text.preparing{color:#1d4ed8}
-    .status-text.available{color:#15803d}
+    .status-text.preparing{color:#111827}
+    .status-text.available{color:#111827}
     .status-text.cancelled{color:#991b1b}
-    .status-text.delivered{color:#15803d}
-    .items-list{text-align:left;background:#f8fafc;border-radius:12px;padding:16px;margin:16px 0}
+    .status-text.delivered{color:#111827}
+    .items-list{text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0}
     .items-list h3{font-size:0.9rem;color:#6b7280;margin-bottom:8px}
     .item-row{display:flex;justify-content:space-between;padding:4px 0;font-size:1rem}
     .item-row .qty{color:#6b7280}
     .access-time{font-size:0.8rem;color:#9ca3af}
-    .progress-bar{width:100%;height:4px;background:#e2e8f0;border-radius:2px;margin:16px 0;overflow:hidden}
-    .progress-bar .fill{height:100%;border-radius:2px;transition:width .5s ease;background:linear-gradient(90deg,#2563eb,#22c55e)}
+    .progress-bar{width:100%;height:4px;background:#e5e7eb;border-radius:2px;margin:16px 0;overflow:hidden}
+    .progress-bar .fill{height:100%;border-radius:2px;transition:width .5s ease;background:#111827}
     @keyframes availablePop{0%{transform:scale(.95)}50%{transform:scale(1.02)}100%{transform:scale(1)}}
     @media(max-width:400px){
       .card{padding:24px 16px}
@@ -65,7 +54,6 @@ export function customerPage(order: OrderData, token: string): string {
     <div class="order-number">${config.displayNumberPad(order.display_number)}</div>
 
     <div class="status-display ${order.status}" id="status-display">
-      <div class="status-emoji" id="status-emoji">${statusEmoji[order.status]}</div>
       <div class="status-text ${order.status}" id="status-text">${statusLabel[order.status]}</div>
     </div>
 
@@ -117,16 +105,13 @@ export function customerPage(order: OrderData, token: string): string {
     function updateStatus(status) {
       const display = document.getElementById('status-display');
       const text = document.getElementById('status-text');
-      const emoji = document.getElementById('status-emoji');
       const progress = document.getElementById('progress-fill');
 
       const labels = { preparing: '準備中', available: 'お召し上がりいただけます', delivered: 'お渡し済み', cancelled: 'キャンセル' };
-      const emojis = { preparing: '👨‍🍳', available: '✅', delivered: '🍽️', cancelled: '❌' };
 
       display.className = 'status-display ' + status;
       text.className = 'status-text ' + status;
       text.textContent = labels[status] || status;
-      emoji.textContent = emojis[status] || '❓';
 
       if (status === 'preparing') progress.style.width = '30%';
       else if (status === 'available') progress.style.width = '70%';

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { adminPage } from "../src/views/admin";
+import { customerPage } from "../src/views/customer";
+import { monitorPage } from "../src/views/monitor";
 import { staffPage } from "../src/views/staff";
 
 function extractInlineScripts(html: string): string[] {
@@ -54,5 +56,23 @@ describe("view scripts", () => {
     );
 
     expectInlineScriptsToParse(html);
+  });
+
+  test("customer page inline scripts are valid JavaScript", () => {
+    const html = customerPage(
+      {
+        display_number: 1,
+        status: "preparing",
+        created_at: "2026-06-25T00:00:00.000Z",
+        items: [{ name: "ラーメン", quantity: 1 }],
+      },
+      "token-1"
+    );
+
+    expectInlineScriptsToParse(html);
+  });
+
+  test("monitor page inline scripts are valid JavaScript", () => {
+    expectInlineScriptsToParse(monitorPage());
   });
 });

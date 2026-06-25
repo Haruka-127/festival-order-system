@@ -10,63 +10,75 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>店員画面 - 文化祭飲食システム</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#f0f4f8;color:#1a1a2e;line-height:1.5;overflow-x:hidden}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#fff;color:#111827;line-height:1.5;overflow-x:hidden}
     button{cursor:pointer;font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 16px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#111827;font-size:14px;font-weight:600;transition:all .15s}
+    .btn:hover{background:#f9fafb}
+    .btn:active{transform:scale(.97)}
+    .btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+    .btn-success,.btn-primary{background:#111827;border-color:#111827;color:#fff}
+    .btn-success:hover,.btn-primary:hover{background:#374151}
+    .btn-lg{padding:14px 24px;font-size:16px}
+    .btn-block{width:100%}
+    .mt-2{margin-top:8px}
+    .text-lg{font-size:1.1rem}
+    .font-bold{font-weight:700}
     .app{display:grid;grid-template-columns:1fr 380px;height:100vh;gap:0}
     @media(max-width:900px){.app{grid-template-columns:1fr}}
     .menu-panel{padding:16px;overflow-y:auto;background:#fff}
-    .orders-panel{padding:16px;overflow-y:auto;background:#f8fafc;border-left:1px solid #e2e8f0}
-    @media(max-width:900px){.orders-panel{border-left:none;border-top:1px solid #e2e8f0;max-height:60vh}}
+    .orders-panel{padding:16px;overflow-y:auto;background:#fff;border-left:1px solid #e5e7eb}
+    @media(max-width:900px){.orders-panel{border-left:none;border-top:1px solid #e5e7eb;max-height:60vh}}
     .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
     .header h1{font-size:20px}
+    .orders-panel .header{display:block}
+    .orders-panel .tabs{margin-top:10px}
     .menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
-    .menu-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 8px;border:2px solid #e2e8f0;border-radius:12px;background:#fff;font-size:14px;font-weight:600;transition:all .15s;min-height:80px}
-    .menu-btn:hover{border-color:#2563eb;background:#eff6ff}
+    .menu-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:14px;font-weight:600;transition:all .15s;min-height:80px}
+    .menu-btn:hover{border-color:#111827;background:#f9fafb}
     .menu-btn:active{transform:scale(.96)}
-    .menu-btn.sold-out{opacity:.4;border-color:#fecaca;background:#fef2f2;cursor:not-allowed}
+    .menu-btn.sold-out{opacity:.45;border-color:#e5e7eb;background:#f9fafb;cursor:not-allowed}
     .menu-btn.sold-out:active{transform:none}
     .menu-btn .price{font-size:11px;color:#6b7280;margin-top:4px;font-weight:400}
-    .cart{background:#f8fafc;border-radius:12px;padding:16px;margin-bottom:16px}
+    .cart{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px}
     .cart h2{font-size:16px;margin-bottom:10px}
-    .cart-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e2e8f0}
+    .cart-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e5e7eb}
     .cart-item:last-child{border-bottom:none}
     .cart-qty{display:flex;align-items:center;gap:6px}
-    .cart-qty button{width:28px;height:28px;border-radius:6px;border:1px solid #ddd;background:#fff;font-size:16px;display:flex;align-items:center;justify-content:center}
-    .cart-qty button:active{background:#e2e8f0}
-    .cart-total{display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:2px solid #e2e8f0;font-weight:700}
-    .order-card{border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:10px;background:#fff}
-    .order-card.available{border-color:#16a34a;background:#f0fdf4}
+    .cart-qty button{width:28px;height:28px;border-radius:6px;border:1px solid #d1d5db;background:#fff;font-size:16px;display:flex;align-items:center;justify-content:center}
+    .cart-qty button:active{background:#f3f4f6}
+    .cart-total{display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;font-weight:700}
+    .order-card{border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px;background:#fff}
+    .order-card.available{border-color:#111827;background:#fff}
     .order-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
     .order-num{font-size:20px;font-weight:700}
     .order-time{font-size:11px;color:#6b7280}
     .order-items{font-size:13px;color:#4b5563;margin-bottom:8px}
     .order-actions{display:flex;gap:6px;flex-wrap:wrap}
-    .order-actions button{padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;transition:all .15s}
+    .order-actions button{padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-weight:600;transition:all .15s;background:#fff;color:#111827}
     .order-actions button:active{transform:scale(.95)}
-    .btn-available{background:#16a34a;color:#fff}
-    .btn-delivered{background:#6b7280;color:#fff}
-    .btn-cancel{background:#fee2e2;color:#dc2626}
-    .btn-undo{background:#e2e8f0;color:#4b5563}
+    .btn-available{background:#111827!important;border-color:#111827!important;color:#fff!important}
+    .btn-delivered{background:#fff;color:#111827}
+    .btn-cancel{background:#fff;color:#b91c1c;border-color:#fecaca!important}
+    .btn-undo{background:#fff;color:#374151}
     .empty-orders{text-align:center;padding:40px 0;color:#9ca3af;font-size:14px}
-    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:12px 24px;border-radius:8px;z-index:9999;animation:toastAnim .3s ease-out}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:12px 24px;border-radius:8px;z-index:9999;animation:toastAnim .3s ease-out}
     @keyframes toastAnim{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9998;display:flex;align-items:center;justify-content:center}
-    .modal-content{background:#fff;border-radius:16px;padding:24px;max-width:400px;width:90%;text-align:center}
-    .modal-content .big-num{font-size:56px;font-weight:700;color:#2563eb;margin:12px 0}
+    .modal-content{background:#fff;border-radius:8px;padding:24px;max-width:400px;width:90%;text-align:center;border:1px solid #e5e7eb}
+    .modal-content .big-num{font-size:56px;font-weight:700;color:#111827;margin:12px 0}
     .modal-content .qr-wrap{margin:12px 0}
     .modal-content .qr-wrap img{max-width:200px;height:auto}
     .modal-close{margin-top:12px}
     .search-box{margin-bottom:12px}
-    .search-box input{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;font-size:14px}
+    .search-box input{width:100%;padding:10px 14px;border:1px solid #d1d5db;border-radius:8px;font-size:14px}
     .tabs{display:flex;gap:4px;margin-bottom:12px}
-    .tab{flex:1;padding:8px;border:none;border-radius:8px;font-size:13px;font-weight:600;background:#e2e8f0;color:#64748b;transition:all .15s}
-    .tab.active{background:#2563eb;color:#fff}
-    .status-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
-    .status-preparing{background:#dbeafe;color:#1d4ed8}
-    .status-available{background:#dcfce7;color:#15803d}
+    .tab{flex:1;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;font-weight:600;background:#fff;color:#374151;transition:all .15s;white-space:nowrap;line-height:1.2}
+    .tab.active{background:#111827;border-color:#111827;color:#fff}
+    .badge,.status-badge{display:inline-flex;align-items:center;justify-content:center;padding:3px 9px;border-radius:6px;font-size:12px;font-weight:700;line-height:1.2;white-space:nowrap}
+    .status-preparing{background:#f3f4f6;color:#111827}
+    .status-available{background:#fff;color:#111827;border:1px solid #111827}
     .status-delivered{background:#e5e7eb;color:#4b5563}
     .status-cancelled{background:#fecaca;color:#991b1b}
   </style>
@@ -75,17 +87,17 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
   <div class="app">
     <div class="menu-panel">
       <div class="header">
-        <h1>🍽️ 注文受付</h1>
+        <h1>注文受付</h1>
         <div style="display:flex;gap:8px;align-items:center">
           <span style="font-size:13px;color:#6b7280">${new Date().toLocaleString("ja-JP")}</span>
           <form method="POST" action="/logout" style="display:inline">
-            <button type="submit" class="btn" style="padding:4px 12px;font-size:12px;background:#e2e8f0;border:none;border-radius:6px">ログアウト</button>
+            <button type="submit" class="btn" style="padding:4px 12px;font-size:12px;background:#fff;border:1px solid #d1d5db;border-radius:6px">ログアウト</button>
           </form>
         </div>
       </div>
 
       <div id="cart" class="cart">
-        <h2>🛒 カート</h2>
+        <h2>カート</h2>
         <div id="cart-items">
           <div class="empty-orders">商品を選択してください</div>
         </div>
@@ -116,7 +128,7 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
 
     <div class="orders-panel">
       <div class="header">
-        <h2>📋 現在の注文</h2>
+        <h2>現在の注文</h2>
         <div class="tabs" id="order-tabs">
           <button class="tab active" data-filter="all" onclick="filterOrders('all')">すべて</button>
           <button class="tab" data-filter="preparing" onclick="filterOrders('preparing')">準備中</button>
@@ -149,7 +161,7 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       const current = cart.get(id) || 0;
       cart.set(id, current + 1);
       if (document.querySelector('.menu-btn[data-id="'+id+'"]')) {
-        document.querySelector('.menu-btn[data-id="'+id+'"]').style.borderColor = '#2563eb';
+        document.querySelector('.menu-btn[data-id="'+id+'"]').style.borderColor = '#111827';
       }
       updateCart();
     }
@@ -171,7 +183,7 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       const submitBtn = document.getElementById('submit-order');
       const entries = Array.from(cart.entries());
       const items = document.querySelectorAll('.menu-btn');
-      items.forEach(b => b.style.borderColor = '#e2e8f0');
+      items.forEach(b => b.style.borderColor = '#d1d5db');
 
       if (entries.length === 0) {
         container.innerHTML = '<div class="empty-orders">商品を選択してください</div>';
@@ -185,7 +197,7 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       for (const [id, qty] of entries) {
         const name = document.querySelector('.menu-btn[data-id="'+id+'"]')?.dataset.name || '商品';
         if (document.querySelector('.menu-btn[data-id="'+id+'"]')) {
-          document.querySelector('.menu-btn[data-id="'+id+'"]').style.borderColor = '#2563eb';
+          document.querySelector('.menu-btn[data-id="'+id+'"]').style.borderColor = '#111827';
         }
         count += qty;
         html += '<div class="cart-item">';
@@ -224,7 +236,6 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
         }
 
         const data = await res.json();
-        const orderUrl = window.location.origin + '/order/' + data.token;
         cart.clear();
         updateCart();
 
@@ -233,10 +244,7 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
         modalBody += '<div class="big-num">' + padNum(data.display_number) + '</div>';
         modalBody += '<div style="font-size:14px;color:#6b7280;margin-bottom:8px">受付番号</div>';
 
-        // Load QR
-        modalBody += '<div class="qr-wrap"><img src="/api/qr/' + data.token + '" alt="QRコード"></div>';
-        modalBody += '<div style="font-size:12px;color:#6b7280;margin-bottom:8px">スマートフォンで注文状況を確認できます</div>';
-        modalBody += '<div style="font-size:11px;color:#9ca3af;margin-bottom:12px;word-break:break-all">' + orderUrl + '</div>';
+        modalBody += '<div style="font-size:12px;color:#6b7280;margin-bottom:12px">受付番号をお客様へお伝えください</div>';
         modalBody += '<button class="btn btn-primary" onclick="closeModal()" style="min-width:120px">閉じる</button>';
 
         document.getElementById('modal-body').innerHTML = modalBody;

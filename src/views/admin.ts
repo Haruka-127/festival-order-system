@@ -14,55 +14,54 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>管理画面 - 文化祭飲食システム</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#f0f4f8;color:#1a1a2e;line-height:1.5}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#fff;color:#111827;line-height:1.5}
     button{cursor:pointer;font:inherit}
     input,select,textarea{font:inherit}
     .app{max-width:1000px;margin:0 auto;padding:16px}
     .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:8px}
     .header h1{font-size:22px}
     .tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
-    .tab{padding:10px 20px;border:none;border-radius:8px;font-size:14px;font-weight:600;background:#e2e8f0;color:#64748b;transition:all .15s}
-    .tab.active{background:#2563eb;color:#fff}
-    .tab:hover:not(.active){background:#cbd5e1}
+    .tab{padding:10px 20px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-weight:600;background:#fff;color:#374151;transition:all .15s}
+    .tab.active{background:#111827;border-color:#111827;color:#fff}
+    .tab:hover:not(.active){background:#f9fafb}
     .section{display:none}
     .section.active{display:block}
-    .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:16px}
+    .card{background:#fff;border-radius:8px;padding:20px;border:1px solid #e5e7eb;box-shadow:none;margin-bottom:16px}
     .card h2{font-size:18px;margin-bottom:12px}
     table{width:100%;border-collapse:collapse}
     th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0;font-size:14px}
-    th{background:#f8fafc;font-weight:600;color:#475569}
+    th{background:#f9fafb;font-weight:600;color:#374151}
     tr:hover{background:#f8fafc}
     .form-group{margin-bottom:12px}
     .form-group label{display:block;font-size:13px;font-weight:600;color:#4b5563;margin-bottom:4px}
-    .form-group input{width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:8px;font-size:14px}
-    .form-group input:focus{outline:none;border-color:#2563eb}
+    .form-group input{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px}
+    .form-group input:focus{outline:none;border-color:#111827}
     .form-row{display:flex;gap:12px;flex-wrap:wrap}
     .form-row .form-group{flex:1;min-width:120px}
     .inline-form{display:inline}
     .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
-    .badge-blue{background:#dbeafe;color:#1d4ed8}
+    .badge-blue{background:#f3f4f6;color:#111827}
     .badge-green{background:#dcfce7;color:#15803d}
     .badge-gray{background:#e5e7eb;color:#4b5563}
     .badge-red{background:#fecaca;color:#991b1b}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;transition:all .15s}
-    .btn:hover{opacity:.85}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:8px 16px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#111827;font-size:13px;font-weight:600;transition:all .15s}
+    .btn:hover{background:#f9fafb}
     .btn:active{transform:scale(.97)}
-    .btn-primary{background:#2563eb;color:#fff}
-    .btn-success{background:#16a34a;color:#fff}
-    .btn-warning{background:#ea580c;color:#fff}
-    .btn-danger{background:#dc2626;color:#fff}
-    .btn-secondary{background:#6b7280;color:#fff}
+    .btn-primary,.btn-success{background:#111827;border-color:#111827;color:#fff}
+    .btn-primary:hover,.btn-success:hover{background:#374151}
+    .btn-warning{background:#fff;color:#111827}
+    .btn-danger{background:#fff;border-color:#dc2626;color:#b91c1c}
+    .btn-secondary{background:#fff;color:#374151}
     .btn-sm{padding:4px 10px;font-size:12px}
     .flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     .mt-2{margin-top:8px}
     .mb-2{margin-bottom:8px}
     .text-center{text-align:center}
     .status-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:12px 0}
-    .stat-card{background:#f8fafc;border-radius:8px;padding:12px;text-align:center}
-    .stat-card .num{font-size:28px;font-weight:700;color:#2563eb}
+    .stat-card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;text-align:center}
+    .stat-card .num{font-size:28px;font-weight:700;color:#111827}
     .stat-card .label{font-size:12px;color:#6b7280;margin-top:2px}
     .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:12px 24px;border-radius:8px;z-index:9999;animation:fadeIn .3s}
     @keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
@@ -74,7 +73,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
 <body>
   <div class="app">
     <div class="header">
-      <h1>⚙️ 管理画面</h1>
+      <h1>管理画面</h1>
       <div class="flex">
         <a href="/staff" class="btn btn-primary btn-sm">店員画面</a>
         <form method="POST" action="/logout" class="inline-form">
@@ -93,11 +92,11 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
     <!-- Items Tab -->
     <div id="tab-items" class="section active">
       <div class="card">
-        <h2>📦 商品一覧</h2>
+        <h2>商品一覧</h2>
         <div class="flex mb-2">
           <button class="btn btn-success btn-sm" onclick="showAddItem()">＋ 新規商品</button>
         </div>
-        <div id="add-item-form" style="display:none;background:#f8fafc;padding:16px;border-radius:8px;margin-bottom:12px">
+        <div id="add-item-form" style="display:none;background:#fff;border:1px solid #e5e7eb;padding:16px;border-radius:8px;margin-bottom:12px">
           <h3 style="font-size:15px;margin-bottom:8px">新規商品を追加</h3>
           <form method="POST" action="/api/admin/items" class="form-row">
             <div class="form-group"><input type="text" name="name" placeholder="商品名" required></div>
@@ -112,12 +111,12 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
               <tr>
                 <td>
                   <form method="POST" action="/api/admin/items/${item.id}/sort" class="inline-form">
-                    <input type="number" name="sort_order" value="${item.sort_order}" style="width:60px;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:13px" onchange="this.form.submit()">
+                    <input type="number" name="sort_order" value="${item.sort_order}" style="width:60px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px" onchange="this.form.submit()">
                   </form>
                 </td>
                 <td>
                   <form method="POST" action="/api/admin/items/${item.id}/rename" class="inline-form" style="display:flex;gap:4px">
-                    <input type="text" name="name" value="${escapeHtml(item.name)}" style="padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:13px">
+                    <input type="text" name="name" value="${escapeHtml(item.name)}" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px">
                     <button type="submit" class="btn btn-sm btn-primary">更新</button>
                   </form>
                 </td>
@@ -150,7 +149,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
     <!-- Orders Tab -->
     <div id="tab-orders" class="section">
       <div class="card">
-        <h2>📋 注文一覧</h2>
+        <h2>注文一覧</h2>
         <div class="flex mb-2">
           <span class="stat-card" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px">
             <span class="num" style="font-size:16px">${orders.filter(o => o.status === "preparing").length}</span>
@@ -189,11 +188,11 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
     <!-- Users Tab -->
     <div id="tab-users" class="section">
       <div class="card">
-        <h2>👤 ユーザー管理</h2>
+        <h2>ユーザー管理</h2>
         <div class="flex mb-2">
           <button class="btn btn-success btn-sm" onclick="showAddUser()">＋ 新規スタッフ</button>
         </div>
-        <div id="add-user-form" style="display:none;background:#f8fafc;padding:16px;border-radius:8px;margin-bottom:12px">
+        <div id="add-user-form" style="display:none;background:#fff;border:1px solid #e5e7eb;padding:16px;border-radius:8px;margin-bottom:12px">
           <h3 style="font-size:15px;margin-bottom:8px">スタッフを追加</h3>
           <form method="POST" action="/api/admin/users" class="form-row">
             <div class="form-group"><input type="text" name="username" placeholder="ユーザー名" required></div>
@@ -222,7 +221,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
     <!-- Settings Tab -->
     <div id="tab-settings" class="section">
       <div class="card">
-        <h2>⚙️ 番号設定</h2>
+        <h2>番号設定</h2>
         <div class="flex" style="align-items:center;gap:16px">
           <div>
             <div style="font-size:13px;color:#6b7280">現在の日付</div>
@@ -230,7 +229,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
           </div>
           <div>
             <div style="font-size:13px;color:#6b7280">現在の番号</div>
-            <div style="font-size:24px;font-weight:700;color:#2563eb">${currentNum ? config.displayNumberPad(currentNum.number) : "---"}</div>
+            <div style="font-size:24px;font-weight:700;color:#111827">${currentNum ? config.displayNumberPad(currentNum.number) : "---"}</div>
           </div>
         </div>
         <div class="mt-2">
@@ -240,7 +239,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
       </div>
 
       <div class="card">
-        <h2>📦 データ管理</h2>
+        <h2>データ管理</h2>
         <button type="button" class="btn btn-danger" onclick="confirmCleanup()">古い注文を削除</button>
         <span style="font-size:12px;color:#6b7280;margin-left:8px">受け渡し済み・キャンセルの注文データを削除します</span>
       </div>
