@@ -35,12 +35,14 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
     .orders-panel .header{display:block}
     .orders-panel .tabs{margin-top:10px}
     .menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
-    .menu-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:14px;font-weight:600;transition:all .15s;min-height:80px}
+    .menu-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:14px;font-weight:600;transition:all .15s;min-height:80px}
     .menu-btn:hover{border-color:#111827;background:#f9fafb}
     .menu-btn:active{transform:scale(.96)}
     .menu-btn.sold-out{opacity:.45;border-color:#e5e7eb;background:#f9fafb;cursor:not-allowed}
     .menu-btn.sold-out:active{transform:none}
     .menu-btn .price{font-size:11px;color:#6b7280;margin-top:4px;font-weight:400}
+    .cart-badge{position:absolute;top:-8px;right:-8px;min-width:24px;height:24px;border-radius:12px;background:#111827;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 6px;line-height:1;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.15);pointer-events:none}
+    .key-hint{position:absolute;top:4px;left:6px;min-width:18px;height:18px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1;border:1px solid #e5e7eb;pointer-events:none}
     .cart{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px}
     .cart h2{font-size:16px;margin-bottom:10px}
     .cart-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e5e7eb}
@@ -115,14 +117,18 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       </div>
 
       <div class="menu-grid" id="menu-grid">
-        ${items.map(item => `
-          <button class="menu-btn ${item.sold_out ? 'sold-out' : ''}" data-id="${item.id}" data-name="${escapeHtml(item.name)}"
+        ${items.map((item, i) => {
+          const key = i < 9 ? i + 1 : 0;
+          return `
+          <button class="menu-btn ${item.sold_out ? 'sold-out' : ''}" data-id="${item.id}" data-name="${escapeHtml(item.name)}" data-key="${key}"
             onclick="addToCart(${item.id})"
             ${item.sold_out ? 'disabled' : ''}>
+            <span class="key-hint">${key}</span>
             ${escapeHtml(item.name)}
             ${item.sold_out ? '<span style="font-size:10px;color:#dc2626;margin-top:4px">売り切れ</span>' : ''}
-          </button>
-        `).join("")}
+            <span class="cart-badge" id="badge-${item.id}" style="display:none">0</span>
+          </button>`;
+        }).join("")}
       </div>
     </div>
 
@@ -160,9 +166,6 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       if (submitting) return;
       const current = cart.get(id) || 0;
       cart.set(id, current + 1);
-      if (document.querySelector('.menu-btn[data-id="'+id+'"]')) {
-        document.querySelector('.menu-btn[data-id="'+id+'"]').style.borderColor = '#111827';
-      }
       updateCart();
     }
 
@@ -182,8 +185,20 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       const total = document.getElementById('cart-total');
       const submitBtn = document.getElementById('submit-order');
       const entries = Array.from(cart.entries());
-      const items = document.querySelectorAll('.menu-btn');
-      items.forEach(b => b.style.borderColor = '#d1d5db');
+
+      // Update badges on menu buttons
+      document.querySelectorAll('.menu-btn').forEach(b => {
+        const id = b.dataset.id;
+        const qty = cart.get(Number(id)) || 0;
+        const badge = document.getElementById('badge-' + id);
+        if (qty > 0) {
+          b.style.borderColor = '#111827';
+          if (badge) { badge.textContent = qty; badge.style.display = 'flex'; }
+        } else {
+          b.style.borderColor = '#d1d5db';
+          if (badge) { badge.style.display = 'none'; }
+        }
+      });
 
       if (entries.length === 0) {
         container.innerHTML = '<div class="empty-orders">商品を選択してください</div>';
@@ -196,9 +211,6 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       let count = 0;
       for (const [id, qty] of entries) {
         const name = document.querySelector('.menu-btn[data-id="'+id+'"]')?.dataset.name || '商品';
-        if (document.querySelector('.menu-btn[data-id="'+id+'"]')) {
-          document.querySelector('.menu-btn[data-id="'+id+'"]').style.borderColor = '#111827';
-        }
         count += qty;
         html += '<div class="cart-item">';
         html += '<span>' + name + '</span>';
@@ -269,6 +281,23 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       if (e && e.target !== document.getElementById('modal')) return;
       document.getElementById('modal').style.display = 'none';
     }
+
+    document.addEventListener('keydown', function(e) {
+      const modal = document.getElementById('modal');
+      if (modal.style.display === 'flex') {
+        if (e.key === 'Enter') { closeModal(); }
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (cart.size > 0 && !submitting) submitOrder();
+        return;
+      }
+      const key = parseInt(e.key);
+      if (!isNaN(key)) {
+        const target = document.querySelector('.menu-btn[data-key="' + key + '"]:not(.sold-out)');
+        if (target) addToCart(Number(target.dataset.id));
+      }
+    });
 
     function showToast(msg) {
       const c = document.getElementById('toast-container');
