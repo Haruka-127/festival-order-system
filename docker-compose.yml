@@ -17,5 +17,8 @@ services:
       DISPLAY_NUMBER_DIGITS: "${DISPLAY_NUMBER_DIGITS:-3}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
     volumes:
-      - ./data:/app/data
+      - festival-order-data:/app/data
     restart: unless-stopped
+
+volumes:
+  festival-order-data:
