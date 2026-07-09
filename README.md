@@ -58,6 +58,20 @@ bun run build
 bun run dist/index.js
 ```
 
+### Docker
+
+```bash
+# 環境変数の設定（.env.example をコピーして編集）
+cp .env.example .env
+# HTTP直アクセスの場合は COOKIE_SECURE=false、HTTPS配下では COOKIE_SECURE=true を設定してください
+
+# 起動例（ホスト側の ./data にDBを永続化）
+mkdir -p data
+docker compose up -d --build
+```
+
+Dockerイメージはビルドステージで `dist/index.js` にバンドルし、実行ステージには `node_modules` を含めない構成です。`docker-compose.yml` はホスト側の `./data` をコンテナ内の `/app/data` にマウントするため、SQLiteデータはホスト側の `./data/orders.db` に永続化されます。compose は `.env` の `BASE_URL`、`SESSION_SECRET`、`ADMIN_PASSWORD`、`COOKIE_SECURE` などを読み込んでコンテナに渡します。
+
 ## アクセス先
 
 | 画面 | URL | 認証 |
