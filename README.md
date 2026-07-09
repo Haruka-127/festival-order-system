@@ -107,6 +107,7 @@ db.close();
 | `ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `ADMIN_PASSWORD` | `admin123` | 初期管理者パスワード（初回起動時にのみ反映。既存DBのパスワード変更は上記のSQLite直接更新が必要） |
 | `DISPLAY_NUMBER_DIGITS` | `3` | 受付番号の桁数（例: 3→001） |
+| `COOKIE_SECURE` | `NODE_ENV=production` の場合は `true` | CookieのSecure属性。HTTPS配下では `true`、HTTP直アクセスでは `false` を指定すること |
 | `NODE_ENV` | - | `production` でSecure Cookie有効 |
 
 ## データ管理

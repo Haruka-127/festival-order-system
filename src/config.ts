@@ -1,5 +1,9 @@
 import type { CookieOptions } from "elysia";
 
+const cookieSecure = process.env.COOKIE_SECURE === undefined
+  ? process.env.NODE_ENV === "production"
+  : process.env.COOKIE_SECURE === "true";
+
 export const config = {
   port: parseInt(process.env.PORT || "3000"),
   host: process.env.HOST || "0.0.0.0",
@@ -23,6 +27,6 @@ export const config = {
     sameSite: "lax",
     path: "/",
     maxAge: 24 * 60 * 60,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure,
   } satisfies CookieOptions,
 };
