@@ -4,20 +4,29 @@ services:
     image: festival-order-system
     container_name: festival-order-system
     ports:
-      - "${PORT:-3000}:3000"
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
     environment:
       NODE_ENV: "production"
       HOST: "0.0.0.0"
       PORT: "3000"
       DATA_DIR: "/app/data"
-      BASE_URL: "${BASE_URL:-http://localhost:3000}"
-      SESSION_SECRET: "${SESSION_SECRET:-your-secure-secret-here}"
+      BASE_URL: "${BASE_URL:?Set BASE_URL to the public HTTPS URL}"
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-your-admin-password}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set a strong initial administrator password}"
       DISPLAY_NUMBER_DIGITS: "${DISPLAY_NUMBER_DIGITS:-3}"
-      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      ALLOW_INSECURE_HTTP: "${ALLOW_INSECURE_HTTP:-false}"
+      TRUST_PROXY: "${TRUST_PROXY:-false}"
     volumes:
       - festival-order-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
     restart: unless-stopped
 
 volumes:

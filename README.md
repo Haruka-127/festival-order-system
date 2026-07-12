@@ -19,7 +19,7 @@
 
 ## 必要環境
 
-- [Bun](https://bun.sh) v1.3.0 以上
+- [Bun](https://bun.sh) v1.3.14 以上
 
 ## セットアップ
 
@@ -63,13 +63,13 @@ bun run dist/index.js
 ```bash
 # 環境変数の設定（.env.example をコピーして編集）
 cp .env.example .env
-# HTTP直アクセスの場合は COOKIE_SECURE=false、HTTPS配下では COOKIE_SECURE=true を設定してください
+# 本番はHTTPSを使用し、COOKIE_SECURE=trueのまま運用してください
 
 # 起動例（Docker管理ボリュームにDBを永続化）
 docker compose up -d --build
 ```
 
-Dockerイメージはビルドステージで `dist/index.js` にバンドルし、実行ステージには `node_modules` を含めない構成です。`docker-compose.yml` は Docker管理の名前付きボリューム `festival-order-data` をコンテナ内の `/app/data` にマウントするため、SQLiteデータはコンテナ削除後もボリュームに永続化されます。compose は `.env` の `BASE_URL`、`SESSION_SECRET`、`ADMIN_PASSWORD`、`COOKIE_SECURE` などを読み込んでコンテナに渡します。
+Dockerイメージはビルドステージで `dist/index.js` にバンドルし、実行ステージには `node_modules` を含めない構成です。`docker-compose.yml` は Docker管理の名前付きボリューム `festival-order-data` をコンテナ内の `/app/data` にマウントするため、SQLiteデータはコンテナ削除後もボリュームに永続化されます。compose は `.env` の `BASE_URL`、`ADMIN_PASSWORD`、`COOKIE_SECURE` などを読み込んでコンテナに渡します。
 
 ## アクセス先
 
@@ -88,9 +88,9 @@ Dockerイメージはビルドステージで `dist/index.js` にバンドルし
 | 項目 | 値 |
 |------|-----|
 | ユーザー名 | `admin` |
-| パスワード | `admin123` |
+| パスワード | 開発時のみ `admin123`（`ADMIN_PASSWORD`で変更） |
 
-**初回起動時に自動作成されます。本番環境では必ずパスワードを変更してください。**
+**初回起動時に自動作成されます。本番環境では既定パスワードによる作成を拒否するため、初回起動前に十分長い `ADMIN_PASSWORD` を設定してください。**
 
 **注意**: パスワードは初回起動時に `ADMIN_PASSWORD` 環境変数の値がDBにハッシュ化されて保存されます。**既にadminが作成された後に環境変数を変更してもDBのパスワードは変わりません。** 変更するにはサーバー停止後に以下のコマンドを実行してください。
 
@@ -99,6 +99,7 @@ bun -e "
 const db = require('bun:sqlite').open('./data/orders.db');
 const hash = await Bun.password.hash('新しいパスワード');
 db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(hash, 'admin');
+db.prepare('DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)').run('admin');
 console.log('Password updated');
 db.close();
 "
@@ -113,14 +114,16 @@ db.close();
 | 変数名 | デフォルト値 | 説明 |
 |--------|------------|------|
 | `PORT` | `3000` | サーバーのポート番号 |
+| `BIND_ADDRESS` | `0.0.0.0` | Docker公開ポートのバインド先 |
 | `HOST` | `0.0.0.0` | サーバーのバインドアドレス |
 | `DATA_DIR` | `./data` | SQLiteデータベースの保存先ディレクトリ |
 | `BASE_URL` | `http://localhost:3000` | QRコードに埋め込むURLのベース。リバースプロキシ使用時は必ず公開URL（例: `https://example.com`）に設定すること |
-| `SESSION_SECRET` | `festival-secret-...` | セッション管理用の秘密鍵 |
 | `ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
-| `ADMIN_PASSWORD` | `admin123` | 初期管理者パスワード（初回起動時にのみ反映。既存DBのパスワード変更は上記のSQLite直接更新が必要） |
+| `ADMIN_PASSWORD` | 開発時は `admin123` | 初期管理者パスワード。本番の初回起動では強い値が必須（既存DBの変更方法は上記参照） |
 | `DISPLAY_NUMBER_DIGITS` | `3` | 受付番号の桁数（例: 3→001） |
-| `COOKIE_SECURE` | `NODE_ENV=production` の場合は `true` | CookieのSecure属性。HTTPS配下では `true`、HTTP直アクセスでは `false` を指定すること |
+| `COOKIE_SECURE` | `NODE_ENV=production` の場合は `true` | CookieのSecure属性。本番は `true` のままHTTPSで運用すること |
+| `ALLOW_INSECURE_HTTP` | `false` | 隔離された信頼済みLANでHTTP運用を明示的に許可する緊急用設定 |
+| `TRUST_PROXY` | `false` | 接続元を試行制限に使うため転送IPヘッダーを信頼する。アプリへの直接接続を遮断した場合のみ有効化 |
 | `NODE_ENV` | - | `production` でSecure Cookie有効 |
 
 ## データ管理
@@ -303,8 +306,7 @@ RestartSec=5
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=BASE_URL=https://example.com
-Environment=SESSION_SECRET=your-secure-secret-here
-Environment=ADMIN_PASSWORD=your-admin-password
+Environment=ADMIN_PASSWORD=replace-with-a-long-random-password
 
 [Install]
 WantedBy=multi-user.target
@@ -339,7 +341,7 @@ bun test tests/views.test.ts
 
 1. サーバーを起動する
 2. `http://サーバーアドレス:3000/login` にアクセスする
-3. 管理者アカウント（admin / admin123）でログインする
+3. `ADMIN_USERNAME` / `ADMIN_PASSWORD` に設定した管理者アカウントでログインする
 4. 管理画面でスタッフアカウントを作成する（必要な場合）
 5. 管理画面で商品を編集する
 6. 店員画面をタブレットで開き、店員に操作を説明する

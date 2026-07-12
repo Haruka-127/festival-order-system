@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.0-alpine AS build
+FROM oven/bun:1.3.14-alpine AS build
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY src ./src
 COPY tsconfig.json ./
 RUN bun run build
 
-FROM oven/bun:1.3.0-alpine AS runtime
+FROM oven/bun:1.3.14-alpine AS runtime
 
 WORKDIR /app
 
@@ -19,7 +19,9 @@ ENV NODE_ENV=production \
     DATA_DIR=/app/data
 
 COPY --from=build --chown=bun:bun /app/dist ./dist
-RUN mkdir -p /app/data && chown -R bun:bun /app/data
+RUN apk upgrade --no-cache \
+    && mkdir -p /app/data \
+    && chown -R bun:bun /app/data
 
 USER bun
 
