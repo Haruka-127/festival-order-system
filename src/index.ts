@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { config } from "./config";
+import { config, validateRuntimeConfig } from "./config";
 import { getDb, closeDb, getAll, getOne, runSql } from "./db/database";
 import { wsManager } from "./services/websocket";
 import { authRoutes } from "./routes/auth";
@@ -8,8 +8,28 @@ import { adminRoutes } from "./routes/admin";
 import { monitorRoutes } from "./routes/monitor";
 import { customerRoutes } from "./routes/customer";
 import { notFoundPage } from "./views/components";
+import { applySecurityHeaders, isValidSameOriginRequest, isValidWebSocketOrigin } from "./security";
 
-const app = new Elysia()
+validateRuntimeConfig();
+
+const app = new Elysia({ serve: { maxRequestBodySize: 64 * 1024 } })
+  .derive({ as: "global" }, () => ({ securityNonce: crypto.randomUUID().replaceAll("-", "") }))
+  .onRequest(({ request }) => {
+    const reject = (message: string, status: number) => {
+      const headers: Record<string, string | number> = {};
+      applySecurityHeaders(headers, new URL(request.url).pathname);
+      return new Response(message, { status, headers: headers as HeadersInit });
+    };
+    if (request.headers.has("transfer-encoding")) return reject("Chunked request bodies are not accepted", 411);
+    const contentLengthHeader = request.headers.get("content-length");
+    if (contentLengthHeader && (!/^\d+$/.test(contentLengthHeader) || Number(contentLengthHeader) > 64 * 1024)) {
+      return reject("Request body too large", 413);
+    }
+    if (!isValidSameOriginRequest(request)) return reject("Invalid request origin", 403);
+  })
+  .onAfterHandle(({ request, set, securityNonce }) => {
+    applySecurityHeaders(set.headers as Record<string, string | number>, new URL(request.url).pathname, securityNonce);
+  })
   .get("/", () => new Response(null, { status: 302, headers: { Location: "/login" } }))
   .use(authRoutes)
   .use(staffRoutes)
@@ -17,6 +37,9 @@ const app = new Elysia()
   .use(monitorRoutes)
   .use(customerRoutes)
   .ws("/ws/monitor", {
+    beforeHandle({ request, set }) {
+      if (!isValidWebSocketOrigin(request)) { set.status = 403; return "Invalid WebSocket origin"; }
+    },
     open(ws) {
       wsManager.addMonitor(ws as any);
       const db = getDb();
@@ -31,6 +54,16 @@ const app = new Elysia()
     },
   })
   .ws("/ws/order/:token", {
+    beforeHandle({ request, params, set }) {
+      if (!isValidWebSocketOrigin(request) || !/^[a-f0-9]{64}$/.test(params.token)) {
+        set.status = 403;
+        return "Invalid WebSocket request";
+      }
+      if (!getOne<{ id: string }>(getDb(), "SELECT id FROM orders WHERE token = ?", params.token)) {
+        set.status = 404;
+        return "Order not found";
+      }
+    },
     open(ws) {
       const token = ws.data.params?.token;
       if (token) {
@@ -59,12 +92,21 @@ const app = new Elysia()
 
 async function seedInitialData() {
   const db = getDb();
-  const admin = getOne<{ id: string }>(db, "SELECT id FROM users WHERE username = ?", config.adminUsername);
+  const admin = getOne<{ id: string; password_hash: string }>(db, "SELECT id, password_hash FROM users WHERE username = ?", config.adminUsername);
   if (!admin) {
+    if (process.env.NODE_ENV === "production" && (config.adminPassword.length < 12 || ["admin123", "your-admin-password"].includes(config.adminPassword))) {
+      throw new Error("Refusing to create an administrator with a weak or default password. Set ADMIN_PASSWORD to at least 12 characters.");
+    }
     const id = crypto.randomUUID();
     const passwordHash = await Bun.password.hash(config.adminPassword);
     runSql(db, "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, 'admin')", id, config.adminUsername, passwordHash);
     console.log(`[INIT] Created admin user: ${config.adminUsername}`);
+  } else if (process.env.NODE_ENV === "production") {
+    for (const knownWeakPassword of ["admin123", "your-admin-password"]) {
+      if (await Bun.password.verify(knownWeakPassword, admin.password_hash)) {
+        throw new Error("The existing administrator still uses a known default password. Change it before starting in production.");
+      }
+    }
   }
 }
 
@@ -91,6 +133,6 @@ console.log(`🚀 Server running at http://${config.host}:${config.port}`);
 if (process.env.NODE_ENV === "production") {
   console.log(`   Admin user: ${config.adminUsername}`);
 } else {
-  console.log(`   Admin login: ${config.adminUsername} / ${config.adminPassword}`);
+  console.log(`   Admin user: ${config.adminUsername}`);
 }
 console.log(`   Monitor: http://${config.host}:${config.port}/monitor`);

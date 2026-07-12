@@ -1,6 +1,6 @@
 import { config } from "../config";
 
-export function monitorPage(): string {
+export function monitorPage(securityNonce = ""): string {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -46,7 +46,7 @@ export function monitorPage(): string {
     </div>
   </div>
 
-  <script>
+  <script nonce="${securityNonce}">
     let ws = null;
     let reconnectTimer = null;
 
@@ -79,6 +79,7 @@ export function monitorPage(): string {
     }
 
     function renderNumbers(numbers) {
+      numbers = Array.isArray(numbers) ? numbers.filter(n => Number.isSafeInteger(n) && n > 0) : [];
       const container = document.getElementById('numbers-container');
       if (!numbers.length) {
         container.innerHTML = '<div class="empty-state"><p>ただいま準備中です</p></div>';

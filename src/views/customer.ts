@@ -7,7 +7,7 @@ type OrderData = {
   items: { name: string; quantity: number }[];
 };
 
-export function customerPage(order: OrderData, token: string): string {
+export function customerPage(order: OrderData, token: string, securityNonce = ""): string {
   const statusLabel: Record<string, string> = {
     preparing: "準備中",
     available: "お召し上がりいただけます",
@@ -69,10 +69,10 @@ export function customerPage(order: OrderData, token: string): string {
     <div class="access-time">ご注文日時: ${new Date(order.created_at).toLocaleString("ja-JP")}</div>
   </div>
 
-  <script>
+  <script nonce="${securityNonce}">
     let ws = null;
     let reconnectTimer = null;
-    const token = '${token}';
+    const token = ${JSON.stringify(token).replace(/</g, "\\u003c")};
 
     function connect() {
       if (ws && ws.readyState <= 1) return;

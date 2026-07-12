@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import type { Changes, SQLQueryBindings } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { config } from "../config";
 
 let db: Database | null = null;
@@ -9,11 +9,15 @@ export type DbBinding = SQLQueryBindings;
 export function getDb(): Database {
   if (!db) {
     const path = config.dbPath();
-    mkdirSync(config.dataDir, { recursive: true });
+    mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
+    chmodSync(config.dataDir, 0o700);
     db = new Database(path);
     db.exec("PRAGMA journal_mode = WAL;");
     db.exec("PRAGMA foreign_keys = ON;");
     initSchema(db);
+    for (const databaseFile of [path, `${path}-wal`, `${path}-shm`]) {
+      if (existsSync(databaseFile)) chmodSync(databaseFile, 0o600);
+    }
   }
   return db;
 }

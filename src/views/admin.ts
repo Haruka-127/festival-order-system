@@ -4,7 +4,7 @@ type Item = { id: number; name: string; active: number; sold_out: number; sort_o
 type OrderSummary = { id: string; display_number: number; status: string; created_at: string; items: string; token: string };
 type UserSummary = { id: string; username: string; role: string; created_at: string };
 
-export function adminPage(items: Item[], orders: OrderSummary[], users: UserSummary[], currentNum: { number: number; date: string } | null): string {
+export function adminPage(items: Item[], orders: OrderSummary[], users: UserSummary[], currentNum: { number: number; date: string } | null, securityNonce = ""): string {
   const statusLabels: Record<string, string> = { preparing: "準備中", available: "提供可能", delivered: "受渡済", cancelled: "キャンセル" };
   const statusColors: Record<string, string> = { preparing: "badge-blue", available: "badge-green", delivered: "badge-gray", cancelled: "badge-red" };
 
@@ -83,10 +83,10 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
     </div>
 
     <div class="tabs">
-      <button class="tab active" onclick="showTab('items')">商品管理</button>
-      <button class="tab" onclick="showTab('orders')">注文一覧</button>
-      <button class="tab" onclick="showTab('users')">ユーザー管理</button>
-      <button class="tab" onclick="showTab('settings')">設定</button>
+      <button class="tab active" data-tab="items">商品管理</button>
+      <button class="tab" data-tab="orders">注文一覧</button>
+      <button class="tab" data-tab="users">ユーザー管理</button>
+      <button class="tab" data-tab="settings">設定</button>
     </div>
 
     <!-- Items Tab -->
@@ -94,7 +94,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
       <div class="card">
         <h2>商品一覧</h2>
         <div class="flex mb-2">
-          <button class="btn btn-success btn-sm" onclick="showAddItem()">＋ 新規商品</button>
+          <button class="btn btn-success btn-sm" data-action="show-add-item">＋ 新規商品</button>
         </div>
         <div id="add-item-form" style="display:none;background:#fff;border:1px solid #e5e7eb;padding:16px;border-radius:8px;margin-bottom:12px">
           <h3 style="font-size:15px;margin-bottom:8px">新規商品を追加</h3>
@@ -111,7 +111,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
               <tr>
                 <td>
                   <form method="POST" action="/api/admin/items/${item.id}/sort" class="inline-form">
-                    <input type="number" name="sort_order" value="${item.sort_order}" style="width:60px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px" onchange="this.form.submit()">
+                    <input type="number" name="sort_order" value="${item.sort_order}" data-auto-submit style="width:60px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:13px">
                   </form>
                 </td>
                 <td>
@@ -136,7 +136,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
                         ${item.sold_out ? "売切解除" : "売り切れ"}
                       </button>
                     </form>
-                    <button class="btn btn-sm btn-danger" onclick="confirmDeleteItem(${item.id}, ${escapeHtml(JSON.stringify(item.name))})">削除</button>
+                    <button class="btn btn-sm btn-danger" data-delete-item-id="${item.id}" data-delete-item-name="${escapeHtml(item.name)}">削除</button>
                   </div>
                 </td>
               </tr>
@@ -175,9 +175,9 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
               <tr>
                 <td style="font-weight:700">${config.displayNumberPad(o.display_number)}</td>
                 <td style="font-size:13px">${escapeHtml(o.items)}</td>
-                <td><span class="badge ${statusColors[o.status] || "badge-gray"}">${statusLabels[o.status] || o.status}</span></td>
+                <td><span class="badge ${statusColors[o.status] || "badge-gray"}">${escapeHtml(statusLabels[o.status] || o.status)}</span></td>
                 <td style="font-size:12px;color:#6b7280">${new Date(o.created_at).toLocaleString("ja-JP")}</td>
-                <td><a href="/order/${o.token}" target="_blank" style="font-size:12px">開く</a></td>
+                <td><a href="/order/${encodeURIComponent(o.token)}" target="_blank" rel="noopener noreferrer" style="font-size:12px">開く</a></td>
               </tr>
             `).join("")}
           </tbody>
@@ -190,7 +190,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
       <div class="card">
         <h2>ユーザー管理</h2>
         <div class="flex mb-2">
-          <button class="btn btn-success btn-sm" onclick="showAddUser()">＋ 新規スタッフ</button>
+          <button class="btn btn-success btn-sm" data-action="show-add-user">＋ 新規スタッフ</button>
         </div>
         <div id="add-user-form" style="display:none;background:#fff;border:1px solid #e5e7eb;padding:16px;border-radius:8px;margin-bottom:12px">
           <h3 style="font-size:15px;margin-bottom:8px">スタッフを追加</h3>
@@ -209,7 +209,7 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
                 <td><span class="badge ${u.role === "admin" ? "badge-blue" : "badge-gray"}">${u.role === "admin" ? "管理者" : "店員"}</span></td>
                 <td style="font-size:12px;color:#6b7280">${new Date(u.created_at).toLocaleString("ja-JP")}</td>
                 <td>
-                  ${u.role !== "admin" ? `<form method="POST" action="/api/admin/users/${u.id}/delete" class="inline-form" onsubmit="return confirm('このスタッフを削除しますか？')"><button type="submit" class="btn btn-sm btn-danger">削除</button></form>` : ""}
+                  ${u.role !== "admin" ? `<form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/delete" class="inline-form" data-confirm-delete-user><button type="submit" class="btn btn-sm btn-danger">削除</button></form>` : ""}
                 </td>
               </tr>
             `).join("")}
@@ -233,14 +233,14 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
           </div>
         </div>
         <div class="mt-2">
-          <button class="btn btn-warning" onclick="confirmReset()">番号をリセット</button>
+          <button class="btn btn-warning" data-action="reset-numbers">番号をリセット</button>
           <span style="font-size:12px;color:#6b7280;margin-left:8px">※ 未処理の注文がない場合のみ、新しい注文を1番から採番します</span>
         </div>
       </div>
 
       <div class="card">
         <h2>データ管理</h2>
-        <button type="button" class="btn btn-danger" onclick="confirmCleanup()">古い注文を削除</button>
+        <button type="button" class="btn btn-danger" data-action="cleanup">古い注文を削除</button>
         <span style="font-size:12px;color:#6b7280;margin-left:8px">受け渡し済み・キャンセルの注文データを削除します</span>
       </div>
     </div>
@@ -249,12 +249,12 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
   <div id="toast-container"></div>
   <div id="confirm-modal" style="display:none"></div>
 
-  <script>
+  <script nonce="${securityNonce}">
     function showTab(name) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById('tab-' + name).classList.add('active');
-      document.querySelector('.tab[onclick*="' + name + '"]').classList.add('active');
+      document.querySelector('.tab[data-tab="' + name + '"]').classList.add('active');
     }
 
     function showAddItem() {
@@ -314,6 +314,26 @@ export function adminPage(items: Item[], orders: OrderSummary[], users: UserSumm
           .catch(() => showToast('エラーが発生しました'));
       }
     }
+
+    document.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      if (button.dataset.tab) showTab(button.dataset.tab);
+      else if (button.dataset.action === 'show-add-item') showAddItem();
+      else if (button.dataset.action === 'show-add-user') showAddUser();
+      else if (button.dataset.action === 'reset-numbers') confirmReset();
+      else if (button.dataset.action === 'cleanup') confirmCleanup();
+      else if (button.dataset.deleteItemId) confirmDeleteItem(Number(button.dataset.deleteItemId), button.dataset.deleteItemName || '');
+    });
+
+    document.addEventListener('change', event => {
+      const input = event.target.closest('input[data-auto-submit]');
+      if (input && input.form) input.form.requestSubmit();
+    });
+
+    document.addEventListener('submit', event => {
+      if (event.target.matches('form[data-confirm-delete-user]') && !confirm('このスタッフを削除しますか？')) event.preventDefault();
+    });
 
     // Check for success/error params
     const params = new URLSearchParams(window.location.search);

@@ -5,13 +5,21 @@ import { notFoundPage } from "../views/components";
 import QRCode from "qrcode";
 import { config } from "../config";
 
+function validToken(token: string): boolean {
+  return /^[a-f0-9]{64}$/.test(token);
+}
+
 export const customerRoutes = new Elysia()
-  .get("/order/:token", ({ params: { token } }) => {
+  .get("/order/:token", (context) => {
+    const { token } = context.params;
+    const { securityNonce } = context as typeof context & { securityNonce: string };
+    if (!validToken(token)) return new Response(notFoundPage(), { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
     const db = getDb();
     const order = getOne<{ id: string; display_number: number; status: string; created_at: string; token: string }>(
       db,
       "SELECT id, display_number, status, created_at, token FROM orders WHERE token = ?",
-      token
+      token,
+      securityNonce,
     );
 
     if (!order) {
@@ -31,6 +39,7 @@ export const customerRoutes = new Elysia()
   })
 
   .get("/api/order/:token", ({ params: { token } }) => {
+    if (!validToken(token)) return new Response(JSON.stringify({ error: "not_found" }), { status: 404, headers: { "Content-Type": "application/json; charset=utf-8" } });
     const db = getDb();
     const order = getOne<{ id: string; display_number: number; status: string; created_at: string; token: string }>(
       db,
@@ -53,6 +62,7 @@ export const customerRoutes = new Elysia()
   })
 
   .get("/api/qr/:token", async ({ params: { token }, set }) => {
+    if (!validToken(token)) { set.status = 404; return { error: "not_found" }; }
     const db = getDb();
     const order = getOne<{ id: string }>(db, "SELECT id FROM orders WHERE token = ?", token);
 

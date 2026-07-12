@@ -5,6 +5,20 @@ import type { UserInfo } from "../middleware/auth";
 import { adminPage } from "../views/admin";
 import { getCurrentDisplayNumber, resetDisplayNumbersForToday } from "../services/numbering";
 import { wsManager } from "../services/websocket";
+import { isPositiveInteger } from "../security";
+
+const MAX_NAME_LENGTH = 100;
+const MAX_USERNAME_LENGTH = 64;
+
+function parseItemId(value: string): number | null {
+  return isPositiveInteger(value, 2_147_483_647) ? Number(value) : null;
+}
+
+function parseSortOrder(value: unknown): number | null {
+  if (typeof value !== "string" || !/^-?\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && Math.abs(parsed) <= 1_000_000 ? parsed : null;
+}
 
 function requireAdmin(user: UserInfo | null): UserInfo | Response {
   if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
@@ -23,7 +37,9 @@ function getAvailableNumbers(): number[] {
 
 export const adminRoutes = new Elysia()
   .use(authMiddleware)
-  .get("/admin", ({ getUser }) => {
+  .get("/admin", (context) => {
+    const { getUser } = context;
+    const { securityNonce } = context as typeof context & { securityNonce: string };
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const db = getDb();
@@ -47,7 +63,7 @@ export const adminRoutes = new Elysia()
 
     const currentNum = getCurrentDisplayNumber();
 
-    return new Response(adminPage(items, orders, users, currentNum), {
+    return new Response(adminPage(items, orders, users, currentNum, securityNonce), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   })
@@ -55,16 +71,18 @@ export const adminRoutes = new Elysia()
   .post("/api/admin/items", async ({ body, set, getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
-    const { name, sort_order } = body as { name?: string; sort_order?: string };
+    const { name, sort_order } = (body ?? {}) as { name?: string; sort_order?: string };
 
-    if (!name || name.trim().length === 0) {
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const parsedSortOrder = parseSortOrder(sort_order ?? "0");
+    if (!trimmedName || trimmedName.length > MAX_NAME_LENGTH || parsedSortOrder === null) {
       set.status = 302;
       set.headers = { Location: "/admin?error=" + encodeURIComponent("商品名を入力してください") };
       return;
     }
 
     const db = getDb();
-    runSql(db, "INSERT INTO items (name, sort_order) VALUES (?, ?)", name.trim(), parseInt(sort_order || "0"));
+    runSql(db, "INSERT INTO items (name, sort_order) VALUES (?, ?)", trimmedName, parsedSortOrder);
 
     set.status = 302;
     set.headers = { Location: "/admin?success=" + encodeURIComponent("商品を追加しました") };
@@ -73,14 +91,16 @@ export const adminRoutes = new Elysia()
   .post("/api/admin/items/:id/rename", async ({ params: { id }, body, set, getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
-    const { name } = body as { name?: string };
-    if (!name || name.trim().length === 0) {
+    const { name } = (body ?? {}) as { name?: string };
+    const itemId = parseItemId(id);
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    if (!itemId || !trimmedName || trimmedName.length > MAX_NAME_LENGTH) {
       set.status = 302;
       set.headers = { Location: "/admin?error=" + encodeURIComponent("商品名を入力してください") };
       return;
     }
     const db = getDb();
-    runSql(db, "UPDATE items SET name = ? WHERE id = ?", name.trim(), parseInt(id));
+    runSql(db, "UPDATE items SET name = ? WHERE id = ?", trimmedName, itemId);
     set.status = 302;
     set.headers = { Location: "/admin?success=" + encodeURIComponent("商品名を更新しました") };
   })
@@ -88,9 +108,12 @@ export const adminRoutes = new Elysia()
   .post("/api/admin/items/:id/sort", async ({ params: { id }, body, set, getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
-    const { sort_order } = body as { sort_order?: string };
+    const { sort_order } = (body ?? {}) as { sort_order?: string };
+    const itemId = parseItemId(id);
+    const parsedSortOrder = parseSortOrder(sort_order ?? "0");
+    if (!itemId || parsedSortOrder === null) { set.status = 400; return { error: "不正なデータです" }; }
     const db = getDb();
-    runSql(db, "UPDATE items SET sort_order = ? WHERE id = ?", parseInt(sort_order || "0"), parseInt(id));
+    runSql(db, "UPDATE items SET sort_order = ? WHERE id = ?", parsedSortOrder, itemId);
     set.status = 302;
     set.headers = { Location: "/admin?success=" + encodeURIComponent("表示順を更新しました") };
   })
@@ -98,10 +121,12 @@ export const adminRoutes = new Elysia()
   .post("/api/admin/items/:id/toggle-active", async ({ params: { id }, set, getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
+    const itemId = parseItemId(id);
+    if (!itemId) { set.status = 400; return { error: "不正な商品IDです" }; }
     const db = getDb();
-    const item = getOne<{ active: number }>(db, "SELECT active FROM items WHERE id = ?", parseInt(id));
+    const item = getOne<{ active: number }>(db, "SELECT active FROM items WHERE id = ?", itemId);
     if (item) {
-      runSql(db, "UPDATE items SET active = ? WHERE id = ?", item.active ? 0 : 1, parseInt(id));
+      runSql(db, "UPDATE items SET active = ? WHERE id = ?", item.active ? 0 : 1, itemId);
     }
     set.status = 302;
     set.headers = { Location: "/admin" };
@@ -110,10 +135,12 @@ export const adminRoutes = new Elysia()
   .post("/api/admin/items/:id/toggle-soldout", async ({ params: { id }, set, getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
+    const itemId = parseItemId(id);
+    if (!itemId) { set.status = 400; return { error: "不正な商品IDです" }; }
     const db = getDb();
-    const item = getOne<{ sold_out: number }>(db, "SELECT sold_out FROM items WHERE id = ?", parseInt(id));
+    const item = getOne<{ sold_out: number }>(db, "SELECT sold_out FROM items WHERE id = ?", itemId);
     if (item) {
-      runSql(db, "UPDATE items SET sold_out = ? WHERE id = ?", item.sold_out ? 0 : 1, parseInt(id));
+      runSql(db, "UPDATE items SET sold_out = ? WHERE id = ?", item.sold_out ? 0 : 1, itemId);
     }
     wsManager.broadcastToMonitor({ numbers: getAvailableNumbers() });
     set.status = 302;
@@ -124,7 +151,8 @@ export const adminRoutes = new Elysia()
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const db = getDb();
-    const itemId = parseInt(id);
+    const itemId = parseItemId(id);
+    if (!itemId) { set.status = 400; return { error: "不正な商品IDです" }; }
 
     const usageCount = getOne<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM order_items WHERE item_id = ?", itemId);
     if (usageCount && usageCount.cnt > 0) {
@@ -142,16 +170,17 @@ export const adminRoutes = new Elysia()
   .post("/api/admin/users", async ({ body, set, getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
-    const { username, password } = body as { username?: string; password?: string };
+    const { username, password } = (body ?? {}) as { username?: string; password?: string };
 
-    if (!username || !password || username.trim().length === 0 || password.length < 4) {
+    const trimmedUsername = typeof username === "string" ? username.trim() : "";
+    if (!trimmedUsername || trimmedUsername.length > MAX_USERNAME_LENGTH || typeof password !== "string" || password.length === 0 || password.length > 128) {
       set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("ユーザー名とパスワード(4文字以上)を入力してください") };
+      set.headers = { Location: "/admin?error=" + encodeURIComponent("ユーザー名とパスワードを入力してください") };
       return;
     }
 
     const db = getDb();
-    const existing = getOne<{ id: string }>(db, "SELECT id FROM users WHERE username = ?", username.trim());
+    const existing = getOne<{ id: string }>(db, "SELECT id FROM users WHERE username = ?", trimmedUsername);
     if (existing) {
       set.status = 302;
       set.headers = { Location: "/admin?error=" + encodeURIComponent("このユーザー名は既に使用されています") };
@@ -160,7 +189,7 @@ export const adminRoutes = new Elysia()
 
     const id = crypto.randomUUID();
     const passwordHash = await Bun.password.hash(password);
-    runSql(db, "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, 'staff')", id, username.trim(), passwordHash);
+    runSql(db, "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, 'staff')", id, trimmedUsername, passwordHash);
 
     set.status = 302;
     set.headers = { Location: "/admin?success=" + encodeURIComponent("スタッフを追加しました") };

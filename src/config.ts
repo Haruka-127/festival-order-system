@@ -4,23 +4,28 @@ const cookieSecure = process.env.COOKIE_SECURE === undefined
   ? process.env.NODE_ENV === "production"
   : process.env.COOKIE_SECURE === "true";
 
+const port = Number(process.env.PORT ?? "3000");
+const displayNumberDigits = Number(process.env.DISPLAY_NUMBER_DIGITS ?? "3");
+const baseUrl = (process.env.BASE_URL || `http://localhost:${port}`).replace(/\/+$/, "");
+
 export const config = {
-  port: parseInt(process.env.PORT || "3000"),
+  port,
   host: process.env.HOST || "0.0.0.0",
 
   dataDir: process.env.DATA_DIR || "./data",
   dbPath: () => `${config.dataDir}/orders.db`,
 
-  sessionSecret: process.env.SESSION_SECRET || "festival-secret-change-in-production",
   sessionMaxAge: 24 * 60 * 60 * 1000,
 
-  displayNumberDigits: parseInt(process.env.DISPLAY_NUMBER_DIGITS || "3"),
-  displayNumberPad: (n: number) => n.toString().padStart(parseInt(process.env.DISPLAY_NUMBER_DIGITS || "3"), "0"),
+  displayNumberDigits,
+  displayNumberPad: (n: number) => n.toString().padStart(displayNumberDigits, "0"),
 
-  baseUrl: process.env.BASE_URL || `http://localhost:${parseInt(process.env.PORT || "3000")}`,
+  baseUrl,
+  publicOrigin: new URL(baseUrl).origin,
 
   adminUsername: process.env.ADMIN_USERNAME || "admin",
   adminPassword: process.env.ADMIN_PASSWORD || "admin123",
+  trustProxy: process.env.TRUST_PROXY === "true",
 
   cookieOptions: {
     httpOnly: true,
@@ -30,3 +35,18 @@ export const config = {
     secure: cookieSecure,
   } satisfies CookieOptions,
 };
+
+export function validateRuntimeConfig(): void {
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) throw new Error("PORT must be an integer from 1 to 65535.");
+  if (!Number.isInteger(config.displayNumberDigits) || config.displayNumberDigits < 1 || config.displayNumberDigits > 12) throw new Error("DISPLAY_NUMBER_DIGITS must be an integer from 1 to 12.");
+  const publicUrl = new URL(config.baseUrl);
+  if (publicUrl.protocol !== "http:" && publicUrl.protocol !== "https:") throw new Error("BASE_URL must use http:// or https://.");
+
+  if (process.env.NODE_ENV !== "production") return;
+  if (!config.cookieOptions.secure && process.env.ALLOW_INSECURE_HTTP !== "true") {
+    throw new Error("Production requires secure cookies. Use HTTPS and COOKIE_SECURE=true, or explicitly set ALLOW_INSECURE_HTTP=true for an isolated trusted network.");
+  }
+  if (config.cookieOptions.secure && publicUrl.protocol !== "https:") {
+    throw new Error("BASE_URL must use https:// when secure cookies are enabled.");
+  }
+}

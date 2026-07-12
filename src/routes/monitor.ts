@@ -12,8 +12,9 @@ function getAvailableNumbers(): number[] {
 }
 
 export const monitorRoutes = new Elysia()
-  .get("/monitor", () => {
-    return new Response(monitorPage(), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  .get("/monitor", (context) => {
+    const { securityNonce } = context as typeof context & { securityNonce: string };
+    return new Response(monitorPage(securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .get("/api/monitor/numbers", () => {
     return { numbers: getAvailableNumbers() };

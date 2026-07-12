@@ -17,6 +17,11 @@ function expectInlineScriptsToParse(html: string) {
   }
 }
 
+function expectStrictScriptMarkup(html: string) {
+  expect(html).toContain('<script nonce="testnonce">');
+  expect(html).not.toMatch(/\son(?:click|change|submit|input|keydown)=/i);
+}
+
 describe("view scripts", () => {
   test("staff page inline scripts are valid JavaScript", () => {
     const html = staffPage(
@@ -32,10 +37,12 @@ describe("view scripts", () => {
           created_at: "2026-06-25T00:00:00.000Z",
           items: [{ name: "ラーメン", quantity: 1 }],
         },
-      ]
+      ],
+      "testnonce",
     );
 
     expectInlineScriptsToParse(html);
+    expectStrictScriptMarkup(html);
   });
 
   test("admin page inline scripts are valid JavaScript", () => {
@@ -52,10 +59,12 @@ describe("view scripts", () => {
         },
       ],
       [{ id: "admin-id", username: "admin", role: "admin", created_at: "2026-06-25T00:00:00.000Z" }],
-      { number: 1, date: "2026-06-25" }
+      { number: 1, date: "2026-06-25" },
+      "testnonce",
     );
 
     expectInlineScriptsToParse(html);
+    expectStrictScriptMarkup(html);
   });
 
   test("customer page inline scripts are valid JavaScript", () => {
@@ -66,13 +75,17 @@ describe("view scripts", () => {
         created_at: "2026-06-25T00:00:00.000Z",
         items: [{ name: "ラーメン", quantity: 1 }],
       },
-      "token-1"
+      "token-1",
+      "testnonce",
     );
 
     expectInlineScriptsToParse(html);
+    expectStrictScriptMarkup(html);
   });
 
   test("monitor page inline scripts are valid JavaScript", () => {
-    expectInlineScriptsToParse(monitorPage());
+    const html = monitorPage("testnonce");
+    expectInlineScriptsToParse(html);
+    expectStrictScriptMarkup(html);
   });
 });

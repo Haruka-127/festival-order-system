@@ -21,7 +21,9 @@ function generateToken(): string {
 
 export const staffRoutes = new Elysia()
   .use(authMiddleware)
-  .get("/staff", ({ getUser }) => {
+  .get("/staff", (context) => {
+    const { getUser } = context;
+    const { securityNonce } = context as typeof context & { securityNonce: string };
     const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
     if (result instanceof Response) return result;
     const db = getDb();
@@ -54,25 +56,30 @@ export const staffRoutes = new Elysia()
       items: orderMap.get(o.id) || [],
     }));
 
-    return new Response(staffPage(items, ordersWithItems), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(staffPage(items, ordersWithItems, securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
 
   .post("/api/staff/orders", async ({ body, set, getUser }) => {
     const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
     if (result instanceof Response) return result;
-    const { items } = body as { items: { item_id: number; quantity: number }[] };
+    const { items } = (body ?? {}) as { items?: { item_id: number; quantity: number }[] };
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
       set.status = 400;
       return { error: "商品を選択してください" };
     }
 
+    const itemIds = new Set<number>();
+    let totalQuantity = 0;
     for (const item of items) {
-      if (!Number.isInteger(item.item_id) || !Number.isInteger(item.quantity) || item.quantity < 1) {
+      if (!item || !Number.isInteger(item.item_id) || item.item_id < 1 || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99 || itemIds.has(item.item_id)) {
         set.status = 400;
         return { error: "不正なデータです" };
       }
+      itemIds.add(item.item_id);
+      totalQuantity += item.quantity;
     }
+    if (totalQuantity > 500) { set.status = 400; return { error: "一度に注文できる数量を超えています" }; }
 
     const db = getDb();
 
@@ -138,9 +145,9 @@ export const staffRoutes = new Elysia()
   .patch("/api/staff/orders/:id/status", async ({ params: { id }, body, set, getUser }) => {
     const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
     if (result instanceof Response) return result;
-    const { status } = body as { status: string };
+    const { status } = (body ?? {}) as { status?: string };
 
-    if (!["preparing", "available", "delivered", "cancelled"].includes(status)) {
+    if (typeof status !== "string" || !["preparing", "available", "delivered", "cancelled"].includes(status)) {
       set.status = 400;
       return { error: "不正な状態です" };
     }
@@ -154,7 +161,18 @@ export const staffRoutes = new Elysia()
 
     if (!order) { set.status = 404; return { error: "注文が見つかりません" }; }
 
-    runSql(db, "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", status, id);
+    const allowedTransitions: Record<string, string[]> = {
+      preparing: ["available", "cancelled"],
+      available: ["preparing", "delivered"],
+      delivered: ["available"],
+      cancelled: ["preparing"],
+    };
+    if (!allowedTransitions[order.status]?.includes(status)) {
+      set.status = 409;
+      return { error: "許可されていない状態変更です" };
+    }
+
+    runSql(db, "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = ?", status, id, order.status);
 
     wsManager.broadcastToMonitor({
       numbers: getAvailableNumbers(),

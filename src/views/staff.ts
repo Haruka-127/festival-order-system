@@ -3,7 +3,7 @@ import { config } from "../config";
 type Item = { id: number; name: string; sold_out: number; sort_order: number };
 type OrderSummary = { id: string; display_number: number; status: string; created_at: string; items: { name: string; quantity: number }[] };
 
-export function staffPage(items: Item[], orders: OrderSummary[]): string {
+export function staffPage(items: Item[], orders: OrderSummary[], securityNonce = ""): string {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -107,21 +107,20 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
           <span>合計</span>
           <span id="cart-count">0点</span>
         </div>
-        <button id="submit-order" class="btn btn-success btn-lg btn-block mt-2" style="display:none" onclick="submitOrder()">
+        <button id="submit-order" class="btn btn-success btn-lg btn-block mt-2" style="display:none" data-action="submit-order">
           注文を確定する
         </button>
       </div>
 
       <div class="search-box">
-        <input type="text" id="item-search" placeholder="商品を検索..." oninput="filterItems(this.value)">
+        <input type="text" id="item-search" placeholder="商品を検索...">
       </div>
 
       <div class="menu-grid" id="menu-grid">
         ${items.map((item, i) => {
           const key = i < 9 ? i + 1 : 0;
           return `
-          <button class="menu-btn ${item.sold_out ? 'sold-out' : ''}" data-id="${item.id}" data-name="${escapeHtml(item.name)}" data-key="${key}"
-            onclick="addToCart(${item.id})"
+          <button class="menu-btn ${item.sold_out ? 'sold-out' : ''}" data-id="${item.id}" data-name="${escapeHtml(item.name)}" data-key="${key}" data-add-item-id="${item.id}"
             ${item.sold_out ? 'disabled' : ''}>
             <span class="key-hint">${key}</span>
             ${escapeHtml(item.name)}
@@ -136,9 +135,9 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
       <div class="header">
         <h2>現在の注文</h2>
         <div class="tabs" id="order-tabs">
-          <button class="tab active" data-filter="all" onclick="filterOrders('all')">すべて</button>
-          <button class="tab" data-filter="preparing" onclick="filterOrders('preparing')">準備中</button>
-          <button class="tab" data-filter="available" onclick="filterOrders('available')">提供可能</button>
+          <button class="tab active" data-filter="all">すべて</button>
+          <button class="tab" data-filter="preparing">準備中</button>
+          <button class="tab" data-filter="available">提供可能</button>
         </div>
       </div>
       <div id="order-list">
@@ -147,14 +146,14 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
     </div>
   </div>
 
-  <div id="modal" class="modal-overlay" style="display:none" onclick="closeModal(event)">
+  <div id="modal" class="modal-overlay" style="display:none">
     <div class="modal-content" id="modal-content">
       <div id="modal-body"></div>
     </div>
   </div>
   <div id="toast-container"></div>
 
-  <script>
+  <script nonce="${securityNonce}">
     const cart = new Map();
     let submitting = false;
 
@@ -213,8 +212,8 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
         const name = document.querySelector('.menu-btn[data-id="'+id+'"]')?.dataset.name || '商品';
         count += qty;
         html += '<div class="cart-item">';
-        html += '<span>' + name + '</span>';
-        html += '<div class="cart-qty"><button onclick="changeQty('+id+',-1)">−</button><span>' + qty + '</span><button onclick="changeQty('+id+',1)">+</button></div>';
+        html += '<span>' + escapeHtml(name) + '</span>';
+        html += '<div class="cart-qty"><button data-change-item-id="'+id+'" data-delta="-1">−</button><span>' + qty + '</span><button data-change-item-id="'+id+'" data-delta="1">+</button></div>';
         html += '</div>';
       }
       container.innerHTML = html;
@@ -257,7 +256,7 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
         modalBody += '<div style="font-size:14px;color:#6b7280;margin-bottom:8px">受付番号</div>';
 
         modalBody += '<div style="font-size:12px;color:#6b7280;margin-bottom:12px">受付番号をお客様へお伝えください</div>';
-        modalBody += '<button class="btn btn-primary" onclick="closeModal()" style="min-width:120px">閉じる</button>';
+        modalBody += '<button class="btn btn-primary" data-action="close-modal" style="min-width:120px">閉じる</button>';
 
         document.getElementById('modal-body').innerHTML = modalBody;
         document.getElementById('modal').style.display = 'flex';
@@ -361,21 +360,22 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
           return;
         }
         container.innerHTML = data.map(o => {
+          const orderId = escapeHtml(String(o.id));
           const itemsHtml = o.items.map(i => escapeHtml(i.name) + ' x' + i.quantity).join(', ');
           const statusClass = o.status === 'preparing' ? 'status-preparing' : o.status === 'available' ? 'status-available' : o.status === 'delivered' ? 'status-delivered' : 'status-cancelled';
           const statusLabel = o.status === 'preparing' ? '準備中' : o.status === 'available' ? '提供可能' : o.status === 'delivered' ? '受渡済' : 'キャンセル';
           let actions = '';
           if (o.status === 'preparing') {
-            actions += '<button class="btn-available" onclick="updateOrderStatus(\\'' + o.id + '\\',\\'available\\')">提供可能にする</button>';
-            actions += '<button class="btn-cancel" onclick="updateOrderStatus(\\'' + o.id + '\\',\\'cancelled\\')">キャンセル</button>';
+            actions += '<button class="btn-available" data-order-id="' + orderId + '" data-order-status="available">提供可能にする</button>';
+            actions += '<button class="btn-cancel" data-order-id="' + orderId + '" data-order-status="cancelled">キャンセル</button>';
           } else if (o.status === 'available') {
-            actions += '<button class="btn-delivered" onclick="updateOrderStatus(\\'' + o.id + '\\',\\'delivered\\')">受渡完了</button>';
-            actions += '<button class="btn-undo" onclick="updateOrderStatus(\\'' + o.id + '\\',\\'preparing\\')">準備中に戻す</button>';
+            actions += '<button class="btn-delivered" data-order-id="' + orderId + '" data-order-status="delivered">受渡完了</button>';
+            actions += '<button class="btn-undo" data-order-id="' + orderId + '" data-order-status="preparing">準備中に戻す</button>';
           } else if (o.status === 'delivered') {
-            actions += '<button class="btn-undo" onclick="updateOrderStatus(\\'' + o.id + '\\',\\'available\\')">提供可能に戻す</button>';
+            actions += '<button class="btn-undo" data-order-id="' + orderId + '" data-order-status="available">提供可能に戻す</button>';
           }
           if (o.status === 'cancelled') {
-            actions += '<button class="btn-undo" onclick="updateOrderStatus(\\'' + o.id + '\\',\\'preparing\\')">準備中に戻す</button>';
+            actions += '<button class="btn-undo" data-order-id="' + orderId + '" data-order-status="preparing">準備中に戻す</button>';
           }
           return '<div class="order-card' + (o.status === 'available' ? ' available' : '') + '" data-status="' + o.status + '">' +
             '<div class="order-header">' +
@@ -394,6 +394,19 @@ export function staffPage(items: Item[], orders: OrderSummary[]): string {
 
     // Poll for order updates
     setInterval(refreshOrders, 5000);
+
+    document.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (button?.dataset.addItemId) addToCart(Number(button.dataset.addItemId));
+      else if (button?.dataset.changeItemId) changeQty(Number(button.dataset.changeItemId), Number(button.dataset.delta));
+      else if (button?.dataset.orderId && button.dataset.orderStatus) updateOrderStatus(button.dataset.orderId, button.dataset.orderStatus);
+      else if (button?.dataset.filter) filterOrders(button.dataset.filter);
+      else if (button?.dataset.action === 'submit-order') submitOrder();
+      else if (button?.dataset.action === 'close-modal') closeModal();
+      else if (event.target === document.getElementById('modal')) closeModal();
+    });
+
+    document.getElementById('item-search').addEventListener('input', event => filterItems(event.target.value));
   </script>
 </body>
 </html>`;
@@ -404,6 +417,7 @@ function escapeHtml(s: string): string {
 }
 
 function orderCard(order: OrderSummary): string {
+  const orderId = escapeHtml(order.id);
   const itemsHtml = order.items.map(i => `${escapeHtml(i.name)} x${i.quantity}`).join(", ");
   const statusLabel = { preparing: "準備中", available: "提供可能", delivered: "受渡済", cancelled: "キャンセル" }[order.status];
   const statusClass = {
@@ -415,15 +429,15 @@ function orderCard(order: OrderSummary): string {
 
   let actions = "";
   if (order.status === "preparing") {
-    actions += `<button class="btn-available" onclick="updateOrderStatus('${order.id}','available')">提供可能にする</button>`;
-    actions += `<button class="btn-cancel" onclick="updateOrderStatus('${order.id}','cancelled')">キャンセル</button>`;
+    actions += `<button class="btn-available" data-order-id="${orderId}" data-order-status="available">提供可能にする</button>`;
+    actions += `<button class="btn-cancel" data-order-id="${orderId}" data-order-status="cancelled">キャンセル</button>`;
   } else if (order.status === "available") {
-    actions += `<button class="btn-delivered" onclick="updateOrderStatus('${order.id}','delivered')">受渡完了</button>`;
-    actions += `<button class="btn-undo" onclick="updateOrderStatus('${order.id}','preparing')">準備中に戻す</button>`;
+    actions += `<button class="btn-delivered" data-order-id="${orderId}" data-order-status="delivered">受渡完了</button>`;
+    actions += `<button class="btn-undo" data-order-id="${orderId}" data-order-status="preparing">準備中に戻す</button>`;
   } else if (order.status === "delivered") {
-    actions += `<button class="btn-undo" onclick="updateOrderStatus('${order.id}','available')">提供可能に戻す</button>`;
+    actions += `<button class="btn-undo" data-order-id="${orderId}" data-order-status="available">提供可能に戻す</button>`;
   } else if (order.status === "cancelled") {
-    actions += `<button class="btn-undo" onclick="updateOrderStatus('${order.id}','preparing')">準備中に戻す</button>`;
+    actions += `<button class="btn-undo" data-order-id="${orderId}" data-order-status="preparing">準備中に戻す</button>`;
   }
 
   return `<div class="order-card${order.status === "available" ? " available" : ""}" data-status="${order.status}">
