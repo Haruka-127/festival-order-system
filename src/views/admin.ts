@@ -97,7 +97,8 @@ export function adminPage(
     .dialog-footer{display:flex;justify-content:flex-end;padding-top:4px}
     .location-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
     .location-card-head h2{margin:0}
-    .add-panel{display:none;background:#f9fafb;border:1px solid var(--line);padding:16px;margin-bottom:14px}
+    .add-panel{background:#f9fafb;border:1px solid var(--line);padding:16px;margin-bottom:14px}
+    .add-panel[hidden]{display:none}
     .badge{display:inline-block;padding:4px 9px;border-radius:2px;font-size:12px;font-weight:800;line-height:1.3}
     .badge-blue{background:#e5e7eb;color:#111827}
     .badge-green{background:#dcfce7;color:var(--green)}
@@ -166,9 +167,9 @@ export function adminPage(
       <div class="card">
         <div class="section-tools">
           <h2>商品</h2>
-          <button class="btn btn-success btn-sm" data-action="show-add-item">＋ 新規商品</button>
+          <button type="button" class="btn btn-success btn-sm" data-action="show-add-item" aria-controls="add-item-form" aria-expanded="false">＋ 新規商品</button>
         </div>
-        <div id="add-item-form" class="add-panel">
+        <div id="add-item-form" class="add-panel" hidden>
           <h3 style="font-size:15px;margin-bottom:8px">新規商品を追加</h3>
           <form method="POST" action="/api/admin/items" class="form-row">
             <div class="form-group"><input type="text" name="name" placeholder="商品名" required></div>
@@ -263,9 +264,9 @@ export function adminPage(
       <div class="card">
         <div class="section-tools">
           <h2>スタッフ</h2>
-          <button class="btn btn-success btn-sm" data-action="show-add-user">＋ 新規スタッフ</button>
+          <button type="button" class="btn btn-success btn-sm" data-action="show-add-user" aria-controls="add-user-form" aria-expanded="false">＋ 新規スタッフ</button>
         </div>
-        <div id="add-user-form" class="add-panel">
+        <div id="add-user-form" class="add-panel" hidden>
           <h3 style="font-size:15px;margin-bottom:8px">スタッフを追加</h3>
           <form method="POST" action="/api/admin/users" class="form-row">
             <div class="form-group"><input type="text" name="username" placeholder="ユーザー名" required></div>
@@ -417,13 +418,17 @@ export function adminPage(
       activeTab.setAttribute('aria-selected', 'true');
     }
 
-    function showAddItem() {
-      const f = document.getElementById('add-item-form');
-      f.style.display = f.style.display === 'none' ? 'block' : 'none';
-    }
-    function showAddUser() {
-      const f = document.getElementById('add-user-form');
-      f.style.display = f.style.display === 'none' ? 'block' : 'none';
+    function toggleAddPanel(panelId, trigger) {
+      const panel = document.getElementById(panelId);
+      if (!panel) return;
+
+      const shouldOpen = panel.hidden;
+      panel.hidden = !shouldOpen;
+      trigger.setAttribute('aria-expanded', String(shouldOpen));
+
+      if (shouldOpen) {
+        panel.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus();
+      }
     }
 
     function showToast(msg, kind = 'success') {
@@ -485,8 +490,8 @@ export function adminPage(
       if (button.dataset.tab) showTab(button.dataset.tab);
       else if (button.dataset.openDialog) document.getElementById(button.dataset.openDialog)?.showModal();
       else if (button.hasAttribute('data-close-dialog')) button.closest('dialog')?.close();
-      else if (button.dataset.action === 'show-add-item') showAddItem();
-      else if (button.dataset.action === 'show-add-user') showAddUser();
+      else if (button.dataset.action === 'show-add-item') toggleAddPanel('add-item-form', button);
+      else if (button.dataset.action === 'show-add-user') toggleAddPanel('add-user-form', button);
       else if (button.dataset.action === 'reset-numbers') confirmReset();
       else if (button.dataset.action === 'cleanup') confirmCleanup();
       else if (button.dataset.deleteItemId) confirmDeleteItem(Number(button.dataset.deleteItemId), button.dataset.deleteItemName || '');

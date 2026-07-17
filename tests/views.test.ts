@@ -92,6 +92,12 @@ describe("view scripts", () => {
     expect(html).toContain('data-open-dialog="location-editor-1"');
     expect(html).toContain('id="location-editor-1" class="editor-dialog"');
     expect(html).toContain("showModal()");
+    expect(html).toContain('data-action="show-add-item" aria-controls="add-item-form" aria-expanded="false"');
+    expect(html).toContain('id="add-item-form" class="add-panel" hidden');
+    expect(html).toContain('data-action="show-add-user" aria-controls="add-user-form" aria-expanded="false"');
+    expect(html).toContain('id="add-user-form" class="add-panel" hidden');
+    expect(html).toContain("const shouldOpen = panel.hidden");
+    expect(html).not.toContain("style.display === 'none'");
   });
 
   test("admin flash messages are embedded without URL query parameters", () => {
