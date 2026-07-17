@@ -1,9 +1,14 @@
 import type { Database } from "bun:sqlite";
 import { getDb, getOne, runSql } from "../db/database";
+import { config } from "../config";
 
 export function todayDate(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: config.timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 export function nextDisplayNumber(): { number: number; date: string } {

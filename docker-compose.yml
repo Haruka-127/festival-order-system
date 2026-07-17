@@ -14,6 +14,7 @@ services:
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:?Set a strong initial administrator password}"
       DISPLAY_NUMBER_DIGITS: "${DISPLAY_NUMBER_DIGITS:-3}"
+      APP_TIME_ZONE: "${APP_TIME_ZONE:-Asia/Tokyo}"
       COOKIE_SECURE: "${COOKIE_SECURE:-true}"
       ALLOW_INSECURE_HTTP: "${ALLOW_INSECURE_HTTP:-false}"
       TRUST_PROXY: "${TRUST_PROXY:-false}"

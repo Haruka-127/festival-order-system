@@ -1,15 +1,10 @@
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { setupTestDb, cleanupTestDb } from "./setup";
 import { closeDb, getDb, runSql } from "../src/db/database";
-import { getNextDisplayNumberForDate, reserveDisplayNumber } from "../src/services/numbering";
+import { getNextDisplayNumberForDate, reserveDisplayNumber, todayDate } from "../src/services/numbering";
 
 beforeAll(() => setupTestDb());
 afterAll(() => cleanupTestDb());
-
-function todayDate(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 test("numbering starts from 1 for new date", () => {
   const db = getDb();
