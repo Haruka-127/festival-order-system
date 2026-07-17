@@ -1,225 +1,263 @@
 import { Elysia } from "elysia";
 import { getAll, getDb, getOne, runSql } from "../db/database";
-import { authMiddleware } from "../middleware/auth";
-import type { UserInfo } from "../middleware/auth";
-import { wsManager } from "../services/websocket";
-import { staffPage } from "../views/staff";
+import { authMiddleware, type UserInfo } from "../middleware/auth";
 import { config } from "../config";
 import { reserveDisplayNumber, todayDate } from "../services/numbering";
+import { getCustomerOrderByToken, getMonitorBoard } from "../services/fulfillment";
+import { wsManager } from "../services/websocket";
+import { getProviderTasks } from "./provider";
+import { staffPage, type CashierOrder } from "../views/staff";
 
-function getUserOrRedirect(user: UserInfo | null, roles: ("admin" | "staff")[]): UserInfo | Response {
+type RequestedItem = { item_id: number; quantity: number };
+type ItemRow = {
+  id: number;
+  name: string;
+  active: number;
+  sold_out: number;
+  fulfillment_location_id: number;
+  location_name: string;
+  location_active: number;
+  max_quantity_per_order: number | null;
+  daily_limit: number | null;
+};
+
+function requireCashier(user: UserInfo | null): UserInfo | Response {
   if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
-  if (!roles.includes(user.role)) return new Response("アクセス権限がありません", { status: 403 });
+  if (user.role !== "admin" && user.role !== "cashier") return new Response("アクセス権限がありません", { status: 403 });
   return user;
 }
 
 function generateToken(): string {
   const buf = new Uint8Array(32);
   crypto.getRandomValues(buf);
-  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(buf, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function isWithinOrderingHours(openTime: string | null, closeTime: string | null): boolean {
+  if (!openTime && !closeTime) return true;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: config.timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = parts.find(part => part.type === "hour")?.value ?? "00";
+  const minute = parts.find(part => part.type === "minute")?.value ?? "00";
+  const current = `${hour}:${minute}`;
+  if (openTime && current < openTime) return false;
+  if (closeTime && current > closeTime) return false;
+  return true;
+}
+
+export function getCashierOrders(): CashierOrder[] {
+  const db = getDb();
+  const orders = getAll<{ id: string; display_number: number; status: string; created_at: string }>(
+    db,
+    `SELECT id, display_number, status, created_at FROM orders
+     WHERE status IN ('preparing', 'available') ORDER BY created_at DESC`,
+  );
+  const fulfillments = getAll<{ id: string; order_id: string; location_name: string; status: string }>(
+    db,
+    `SELECT f.id, f.order_id, l.name AS location_name, f.status
+     FROM order_fulfillments f JOIN fulfillment_locations l ON l.id = f.location_id
+     WHERE f.order_id IN (SELECT id FROM orders WHERE status IN ('preparing', 'available'))
+     ORDER BY l.sort_order ASC, l.id ASC`,
+  );
+  const items = getAll<{ fulfillment_id: string; name: string; quantity: number }>(
+    db,
+    `SELECT fulfillment_id, item_name AS name, quantity FROM order_items
+     WHERE order_id IN (SELECT id FROM orders WHERE status IN ('preparing', 'available'))
+     ORDER BY id ASC`,
+  );
+  const itemMap = new Map<string, { name: string; quantity: number }[]>();
+  for (const item of items) {
+    const group = itemMap.get(item.fulfillment_id) ?? [];
+    group.push({ name: item.name, quantity: item.quantity });
+    itemMap.set(item.fulfillment_id, group);
+  }
+  const fulfillmentMap = new Map<string, CashierOrder["fulfillments"]>();
+  for (const fulfillment of fulfillments) {
+    const group = fulfillmentMap.get(fulfillment.order_id) ?? [];
+    group.push({
+      id: fulfillment.id,
+      location_name: fulfillment.location_name,
+      status: fulfillment.status,
+      items: itemMap.get(fulfillment.id) ?? [],
+    });
+    fulfillmentMap.set(fulfillment.order_id, group);
+  }
+  return orders.map(order => ({ ...order, fulfillments: fulfillmentMap.get(order.id) ?? [] }));
 }
 
 export const staffRoutes = new Elysia()
   .use(authMiddleware)
   .get("/staff", (context) => {
-    const { getUser } = context;
+    const user = requireCashier(context.getUser());
+    if (user instanceof Response) return user;
     const { securityNonce } = context as typeof context & { securityNonce: string };
-    const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
-    if (result instanceof Response) return result;
-    const db = getDb();
-
-    const items = getAll<{ id: number; name: string; sold_out: number; sort_order: number }>(
-      db,
-      "SELECT id, name, sold_out, sort_order FROM items WHERE active = 1 ORDER BY sort_order ASC, id ASC"
+    const items = getAll<{ id: number; name: string; sold_out: number; sort_order: number; location_name: string; max_quantity_per_order: number | null }>(
+      getDb(),
+      `SELECT i.id, i.name, i.sold_out, i.sort_order, l.name AS location_name, i.max_quantity_per_order
+       FROM items i JOIN fulfillment_locations l ON l.id = i.fulfillment_location_id
+       WHERE i.active = 1 AND l.active = 1 ORDER BY i.sort_order ASC, i.id ASC`,
     );
-
-    const orders = getAll<{ id: string; display_number: number; status: string; created_at: string }>(
-      db,
-      `SELECT o.id, o.display_number, o.status, o.created_at
-       FROM orders o WHERE o.status IN ('preparing', 'available')
-       ORDER BY o.created_at DESC`
-    );
-
-    const orderItems = getAll<{ order_id: string; item_name: string; quantity: number }>(
-      db,
-      "SELECT order_id, item_name, quantity FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('preparing', 'available'))"
-    );
-
-    const orderMap = new Map<string, { name: string; quantity: number }[]>();
-    for (const oi of orderItems) {
-      if (!orderMap.has(oi.order_id)) orderMap.set(oi.order_id, []);
-      orderMap.get(oi.order_id)!.push({ name: oi.item_name, quantity: oi.quantity });
-    }
-
-    const ordersWithItems = orders.map(o => ({
-      ...o,
-      items: orderMap.get(o.id) || [],
-    }));
-
-    return new Response(staffPage(items, ordersWithItems, securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(staffPage(items, getCashierOrders(), securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
-
-  .post("/api/staff/orders", async ({ body, set, getUser }) => {
-    const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
-    if (result instanceof Response) return result;
-    const { items } = (body ?? {}) as { items?: { item_id: number; quantity: number }[] };
-
-    if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
-      set.status = 400;
-      return { error: "商品を選択してください" };
+  .post("/api/staff/orders", ({ body, set, getUser }) => {
+    const user = requireCashier(getUser());
+    if (user instanceof Response) return user;
+    const payload = (body ?? {}) as { items?: RequestedItem[]; client_request_id?: string };
+    const items = payload.items;
+    if (!Array.isArray(items) || items.length === 0 || items.length > 100) { set.status = 400; return { error: "商品を選択してください" }; }
+    if (payload.client_request_id !== undefined && (typeof payload.client_request_id !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(payload.client_request_id))) {
+      set.status = 400; return { error: "不正なリクエストIDです" };
     }
 
-    const itemIds = new Set<number>();
-    let totalQuantity = 0;
+    const ids = new Set<number>();
     for (const item of items) {
-      if (!item || !Number.isInteger(item.item_id) || item.item_id < 1 || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99 || itemIds.has(item.item_id)) {
-        set.status = 400;
-        return { error: "不正なデータです" };
+      if (!item || !Number.isInteger(item.item_id) || item.item_id < 1 || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 999 || ids.has(item.item_id)) {
+        set.status = 400; return { error: "不正な注文データです" };
       }
-      itemIds.add(item.item_id);
-      totalQuantity += item.quantity;
+      ids.add(item.item_id);
     }
-    if (totalQuantity > 500) { set.status = 400; return { error: "一度に注文できる数量を超えています" }; }
 
     const db = getDb();
+    if (payload.client_request_id) {
+      const existing = getOne<{ id: string; display_number: number; token: string }>(db, "SELECT id, display_number, token FROM orders WHERE client_request_id = ?", payload.client_request_id);
+      if (existing) return { ...existing, display_number_padded: config.displayNumberPad(existing.display_number), duplicated: true };
+    }
 
     const orderId = crypto.randomUUID();
     const token = generateToken();
     const date = todayDate();
     const now = new Date().toISOString();
+    const affectedLocations = new Set<number>();
 
     const createOrder = db.transaction(() => {
-      const itemRows = new Map<number, { name: string }>();
-      for (const item of items) {
-        const row = getOne<{ id: number; name: string; active: number; sold_out: number }>(
+      const settings = getOne<{
+        ordering_enabled: number;
+        order_open_time: string | null;
+        order_close_time: string | null;
+        daily_order_limit: number | null;
+        max_items_per_order: number;
+        max_total_quantity: number;
+      }>(db, "SELECT ordering_enabled, order_open_time, order_close_time, daily_order_limit, max_items_per_order, max_total_quantity FROM app_settings WHERE id = 1");
+      if (!settings?.ordering_enabled) throw new Error("現在、注文受付を停止しています");
+      if (!isWithinOrderingHours(settings.order_open_time, settings.order_close_time)) throw new Error("現在は注文受付時間外です");
+      if (items.length > settings.max_items_per_order) throw new Error("1回に注文できる商品種類数を超えています");
+      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+      if (totalQuantity > settings.max_total_quantity) throw new Error("1回に注文できる数量を超えています");
+      if (settings.daily_order_limit) {
+        const count = getOne<{ count: number }>(db, "SELECT COUNT(*) AS count FROM orders WHERE display_number_date = ? AND status != 'cancelled'", date)?.count ?? 0;
+        if (count >= settings.daily_order_limit) throw new Error("本日の注文受付上限に達しました");
+      }
+
+      const itemRows = new Map<number, ItemRow>();
+      const locationQuantities = new Map<number, number>();
+      for (const requested of items) {
+        const row = getOne<ItemRow>(
           db,
-          "SELECT id, name, active, sold_out FROM items WHERE id = ?",
-          item.item_id
+          `SELECT i.id, i.name, i.active, i.sold_out, i.fulfillment_location_id,
+                  i.max_quantity_per_order, i.daily_limit,
+                  l.name AS location_name, l.active AS location_active
+           FROM items i JOIN fulfillment_locations l ON l.id = i.fulfillment_location_id
+           WHERE i.id = ?`,
+          requested.item_id,
         );
-        if (!row) throw new Error(`商品ID ${item.item_id} が見つかりません`);
-        if (!row.active || row.sold_out) throw new Error(`「${row.name}」は現在注文できません`);
-        itemRows.set(item.item_id, { name: row.name });
+        if (!row) throw new Error(`商品ID ${requested.item_id} が見つかりません`);
+        if (!row.active || row.sold_out || !row.location_active) throw new Error(`「${row.name}」は現在注文できません`);
+        if (row.max_quantity_per_order && requested.quantity > row.max_quantity_per_order) throw new Error(`「${row.name}」は1注文${row.max_quantity_per_order}個までです`);
+        const used = getOne<{ reserved_quantity: number }>(db, "SELECT reserved_quantity FROM daily_item_usage WHERE usage_date = ? AND item_id = ?", date, row.id)?.reserved_quantity ?? 0;
+        if (row.daily_limit && used + requested.quantity > row.daily_limit) throw new Error(`「${row.name}」は本日の受付上限に達しました`);
+        itemRows.set(row.id, row);
+        locationQuantities.set(row.fulfillment_location_id, (locationQuantities.get(row.fulfillment_location_id) ?? 0) + requested.quantity);
+      }
+
+      for (const [locationId, newUnits] of locationQuantities) {
+        const location = getOne<{ name: string; max_preparing_orders: number | null; max_preparing_units: number | null }>(
+          db,
+          "SELECT name, max_preparing_orders, max_preparing_units FROM fulfillment_locations WHERE id = ? AND active = 1",
+          locationId,
+        );
+        if (!location) throw new Error("提供場所が利用できません");
+        const pending = getOne<{ orders: number; units: number }>(
+          db,
+          `SELECT COUNT(DISTINCT f.id) AS orders, COALESCE(SUM(oi.quantity), 0) AS units
+           FROM order_fulfillments f LEFT JOIN order_items oi ON oi.fulfillment_id = f.id
+           WHERE f.location_id = ? AND f.status = 'preparing'`,
+          locationId,
+        );
+        if (location.max_preparing_orders && (pending?.orders ?? 0) + 1 > location.max_preparing_orders) throw new Error(`「${location.name}」の受付上限に達しました`);
+        if (location.max_preparing_units && (pending?.units ?? 0) + newUnits > location.max_preparing_units) throw new Error(`「${location.name}」の準備可能数を超えています`);
       }
 
       const displayNumber = reserveDisplayNumber(db, date);
+      runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token, created_at, updated_at, client_request_id) VALUES (?, ?, ?, 'preparing', ?, ?, ?, ?)", orderId, displayNumber, date, token, now, now, payload.client_request_id ?? null);
 
-      runSql(
-        db,
-        "INSERT INTO orders (id, display_number, display_number_date, status, token, created_at, updated_at) VALUES (?, ?, ?, 'preparing', ?, ?, ?)",
-        orderId, displayNumber, date, token, now, now
-      );
-
-      for (const item of items) {
-        const itemRow = itemRows.get(item.item_id)!;
-        runSql(
-          db,
-          "INSERT INTO order_items (order_id, item_id, quantity, item_name) VALUES (?, ?, ?, ?)",
-          orderId, item.item_id, item.quantity, itemRow.name
-        );
+      const fulfillmentIds = new Map<number, string>();
+      for (const locationId of locationQuantities.keys()) {
+        const fulfillmentId = crypto.randomUUID();
+        fulfillmentIds.set(locationId, fulfillmentId);
+        affectedLocations.add(locationId);
+        runSql(db, "INSERT INTO order_fulfillments (id, order_id, location_id, status, created_at, updated_at) VALUES (?, ?, ?, 'preparing', ?, ?)", fulfillmentId, orderId, locationId, now, now);
+        runSql(db, "INSERT INTO fulfillment_events (fulfillment_id, from_status, to_status, changed_by) VALUES (?, NULL, 'preparing', ?)", fulfillmentId, user.id);
       }
-
+      for (const requested of items) {
+        const row = itemRows.get(requested.item_id)!;
+        runSql(db, "INSERT INTO order_items (order_id, item_id, quantity, item_name, fulfillment_id) VALUES (?, ?, ?, ?, ?)", orderId, row.id, requested.quantity, row.name, fulfillmentIds.get(row.fulfillment_location_id)!);
+        runSql(db, `INSERT INTO daily_item_usage (usage_date, item_id, reserved_quantity, updated_at) VALUES (?, ?, ?, datetime('now'))
+                    ON CONFLICT(usage_date, item_id) DO UPDATE SET reserved_quantity = reserved_quantity + excluded.reserved_quantity, updated_at = datetime('now')`, date, row.id, requested.quantity);
+      }
       return displayNumber;
     });
 
     let displayNumber: number;
-    try {
-      displayNumber = createOrder();
-    } catch (error) {
-      set.status = 400;
-      return { error: error instanceof Error ? error.message : "注文を作成できませんでした" };
-    }
+    try { displayNumber = createOrder(); }
+    catch (error) { set.status = 409; return { error: error instanceof Error ? error.message : "注文を作成できませんでした" }; }
 
-    wsManager.broadcastToMonitor({
-      numbers: getAvailableNumbers(),
-    });
-
+    for (const locationId of affectedLocations) wsManager.broadcastToProvider(locationId, { tasks: getProviderTasks(locationId) });
+    wsManager.broadcastToMonitor(getMonitorBoard());
     set.status = 201;
-    return {
-      id: orderId,
-      display_number: displayNumber,
-      display_number_padded: config.displayNumberPad(displayNumber),
-      token,
-    };
+    return { id: orderId, display_number: displayNumber, display_number_padded: config.displayNumberPad(displayNumber), token };
   })
-
-  .patch("/api/staff/orders/:id/status", async ({ params: { id }, body, set, getUser }) => {
-    const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
-    if (result instanceof Response) return result;
+  .patch("/api/staff/orders/:id/status", ({ params: { id }, body, set, getUser }) => {
+    const user = requireCashier(getUser());
+    if (user instanceof Response) return user;
     const { status } = (body ?? {}) as { status?: string };
-
-    if (typeof status !== "string" || !["preparing", "available", "delivered", "cancelled"].includes(status)) {
-      set.status = 400;
-      return { error: "不正な状態です" };
-    }
-
+    if (status !== "cancelled") { set.status = 400; return { error: "受付画面から変更できるのはキャンセルだけです" }; }
     const db = getDb();
-    const order = getOne<{ id: string; status: string; token: string }>(
-      db,
-      "SELECT id, status, token FROM orders WHERE id = ?",
-      id
-    );
-
+    const order = getOne<{ status: string; display_number_date: string; token: string }>(db, "SELECT status, display_number_date, token FROM orders WHERE id = ?", id);
     if (!order) { set.status = 404; return { error: "注文が見つかりません" }; }
-
-    const allowedTransitions: Record<string, string[]> = {
-      preparing: ["available", "cancelled"],
-      available: ["preparing", "delivered"],
-      delivered: ["available"],
-      cancelled: ["preparing"],
-    };
-    if (!allowedTransitions[order.status]?.includes(status)) {
-      set.status = 409;
-      return { error: "許可されていない状態変更です" };
-    }
-
-    runSql(db, "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = ?", status, id, order.status);
-
-    wsManager.broadcastToMonitor({
-      numbers: getAvailableNumbers(),
+    if (!["preparing", "available"].includes(order.status)) { set.status = 409; return { error: "この注文はキャンセルできません" }; }
+    const locations = getAll<{ location_id: number }>(db, "SELECT DISTINCT location_id FROM order_fulfillments WHERE order_id = ?", id);
+    const cancelOrder = db.transaction(() => {
+      const changed = runSql(db, "UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND status = ?", id, order.status);
+      if (changed.changes !== 1) throw new Error("注文が別の端末で更新されました");
+      const tasks = getAll<{ id: string; status: string }>(db, "SELECT id, status FROM order_fulfillments WHERE order_id = ? AND status != 'cancelled'", id);
+      const refundableFulfillments = new Set(tasks.filter(task => task.status !== "handed_over").map(task => task.id));
+      for (const task of tasks) {
+        runSql(db, "UPDATE order_fulfillments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?", task.id);
+        runSql(db, "INSERT INTO fulfillment_events (fulfillment_id, from_status, to_status, changed_by) VALUES (?, ?, 'cancelled', ?)", task.id, task.status, user.id);
+      }
+      const orderedItems = getAll<{ fulfillment_id: string; item_id: number; quantity: number }>(
+        db,
+        "SELECT fulfillment_id, item_id, quantity FROM order_items WHERE order_id = ?",
+        id,
+      );
+      for (const item of orderedItems) {
+        if (refundableFulfillments.has(item.fulfillment_id)) runSql(db, "UPDATE daily_item_usage SET reserved_quantity = MAX(0, reserved_quantity - ?), updated_at = datetime('now') WHERE usage_date = ? AND item_id = ?", item.quantity, order.display_number_date, item.item_id);
+      }
     });
-
-    wsManager.broadcastToOrder(order.token, { status });
-
-    return { status };
+    try { cancelOrder(); }
+    catch (error) { set.status = 409; return { error: error instanceof Error ? error.message : "注文をキャンセルできませんでした" }; }
+    for (const location of locations) wsManager.broadcastToProvider(location.location_id, { tasks: getProviderTasks(location.location_id) });
+    wsManager.broadcastToMonitor(getMonitorBoard());
+    const customer = getCustomerOrderByToken(order.token);
+    if (customer) wsManager.broadcastToOrder(order.token, customer);
+    return { status: "cancelled" };
   })
-
   .get("/api/staff/orders", ({ getUser }) => {
-    const result = getUserOrRedirect(getUser(), ["admin", "staff"]);
-    if (result instanceof Response) return result;
-    const db = getDb();
-
-    const orders = getAll<{ id: string; display_number: number; status: string; created_at: string }>(
-      db,
-      `SELECT o.id, o.display_number, o.status, o.created_at
-       FROM orders o WHERE o.status IN ('preparing', 'available')
-       ORDER BY o.created_at DESC`
-    );
-
-    const orderItems = getAll<{ order_id: string; item_name: string; quantity: number }>(
-      db,
-      "SELECT order_id, item_name, quantity FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('preparing', 'available'))"
-    );
-
-    const orderMap = new Map<string, { name: string; quantity: number }[]>();
-    for (const oi of orderItems) {
-      if (!orderMap.has(oi.order_id)) orderMap.set(oi.order_id, []);
-      orderMap.get(oi.order_id)!.push({ name: oi.item_name, quantity: oi.quantity });
-    }
-
-    return orders.map(o => ({
-      id: o.id,
-      display_number: o.display_number,
-      status: o.status,
-      created_at: o.created_at,
-      items: orderMap.get(o.id) || [],
-    }));
+    const user = requireCashier(getUser());
+    if (user instanceof Response) return user;
+    return getCashierOrders();
   });
-
-function getAvailableNumbers(): number[] {
-  const db = getDb();
-  const rows = getAll<{ display_number: number }>(
-    db,
-    "SELECT display_number FROM orders WHERE status = 'available' ORDER BY display_number ASC"
-  );
-  return rows.map(r => r.display_number);
-}

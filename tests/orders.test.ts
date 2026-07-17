@@ -1,7 +1,7 @@
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { setupTestDb, cleanupTestDb } from "./setup";
 import { getDb, getOne, runSql } from "../src/db/database";
-import { nextDisplayNumber } from "../src/services/numbering";
+import { nextDisplayNumber, todayDate } from "../src/services/numbering";
 
 beforeAll(() => setupTestDb());
 afterAll(() => cleanupTestDb());
@@ -53,8 +53,7 @@ test("inactive item is rejected", () => {
 
 test("display number is generated sequentially", () => {
   const db = getDb();
-  const now = new Date();
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const dateStr = todayDate();
 
   runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token, created_at, updated_at) VALUES (?, ?, ?, 'preparing', ?, datetime('now'), datetime('now'))",
     "order-1", 1, dateStr, "token-test-1");
@@ -86,7 +85,7 @@ test("order status transitions are valid", () => {
 
 test("sequential order creation produces unique numbers", () => {
   const db = getDb();
-  const dateStr = new Date().toISOString().slice(0, 10);
+  const dateStr = todayDate();
   const numbers: number[] = [];
 
   for (let i = 0; i < 10; i++) {

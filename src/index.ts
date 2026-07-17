@@ -1,14 +1,16 @@
 import { Elysia } from "elysia";
 import { config, validateRuntimeConfig } from "./config";
-import { getDb, closeDb, getAll, getOne, runSql } from "./db/database";
+import { getDb, closeDb, getOne, runSql } from "./db/database";
 import { wsManager } from "./services/websocket";
 import { authRoutes } from "./routes/auth";
 import { staffRoutes } from "./routes/staff";
 import { adminRoutes } from "./routes/admin";
 import { monitorRoutes } from "./routes/monitor";
 import { customerRoutes } from "./routes/customer";
+import { providerRoutes } from "./routes/provider";
 import { notFoundPage } from "./views/components";
 import { applySecurityHeaders, isValidSameOriginRequest, isValidWebSocketOrigin } from "./security";
+import { getCustomerOrderByToken, getMonitorBoard } from "./services/fulfillment";
 
 validateRuntimeConfig();
 
@@ -33,6 +35,7 @@ const app = new Elysia({ serve: { maxRequestBodySize: 64 * 1024 } })
   .get("/", () => new Response(null, { status: 302, headers: { Location: "/login" } }))
   .use(authRoutes)
   .use(staffRoutes)
+  .use(providerRoutes)
   .use(adminRoutes)
   .use(monitorRoutes)
   .use(customerRoutes)
@@ -42,12 +45,7 @@ const app = new Elysia({ serve: { maxRequestBodySize: 64 * 1024 } })
     },
     open(ws) {
       wsManager.addMonitor(ws as any);
-      const db = getDb();
-      const numbers = getAll<{ display_number: number }>(
-        db,
-        "SELECT display_number FROM orders WHERE status = 'available' ORDER BY display_number ASC"
-      ).map(r => r.display_number);
-      ws.send(JSON.stringify({ type: "monitor_update", numbers }));
+      ws.send(JSON.stringify({ type: "monitor_update", ...getMonitorBoard() }));
     },
     close(ws) {
       wsManager.remove(ws as any);
@@ -68,10 +66,9 @@ const app = new Elysia({ serve: { maxRequestBodySize: 64 * 1024 } })
       const token = ws.data.params?.token;
       if (token) {
         wsManager.addOrderClient(token, ws as any);
-        const db = getDb();
-        const order = getOne<{ status: string }>(db, "SELECT status FROM orders WHERE token = ?", token);
+        const order = getCustomerOrderByToken(token);
         if (order) {
-          ws.send(JSON.stringify({ type: "order_update", status: order.status }));
+          ws.send(JSON.stringify({ type: "order_update", ...order }));
         }
       }
     },

@@ -6,9 +6,17 @@ import { adminPage } from "../views/admin";
 import { getCurrentDisplayNumber, resetDisplayNumbersForToday } from "../services/numbering";
 import { wsManager } from "../services/websocket";
 import { isPositiveInteger } from "../security";
+import { getMonitorBoard } from "../services/fulfillment";
+import type { FlashKind, FlashTargetTab } from "../services/flash";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_USERNAME_LENGTH = 64;
+type AddFlash = (kind: FlashKind, message: string, targetTab?: FlashTargetTab | null) => void;
+
+function redirectAdmin(addFlash?: AddFlash, kind?: FlashKind, message?: string, targetTab?: FlashTargetTab): Response {
+  if (addFlash && kind && message) addFlash(kind, message, targetTab ?? null);
+  return new Response(null, { status: 303, headers: { Location: "/admin" } });
+}
 
 function parseItemId(value: string): number | null {
   return isPositiveInteger(value, 2_147_483_647) ? Number(value) : null;
@@ -26,86 +34,105 @@ function requireAdmin(user: UserInfo | null): UserInfo | Response {
   return user;
 }
 
-function getAvailableNumbers(): number[] {
-  const db = getDb();
-  const rows = getAll<{ display_number: number }>(
-    db,
-    "SELECT display_number FROM orders WHERE status = 'available' ORDER BY display_number ASC"
-  );
-  return rows.map(r => r.display_number);
-}
-
 export const adminRoutes = new Elysia()
   .use(authMiddleware)
   .get("/admin", (context) => {
-    const { getUser } = context;
+    const { getUser, consumeFlash } = context;
     const { securityNonce } = context as typeof context & { securityNonce: string };
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const db = getDb();
 
-    const items = getAll<{ id: number; name: string; active: number; sold_out: number; sort_order: number }>(
+    const items = getAll<{ id: number; name: string; active: number; sold_out: number; sort_order: number; fulfillment_location_id: number; location_name: string; max_quantity_per_order: number | null; daily_limit: number | null }>(
       db,
-      "SELECT id, name, active, sold_out, sort_order FROM items ORDER BY sort_order ASC, id ASC"
+      `SELECT i.id, i.name, i.active, i.sold_out, i.sort_order, i.fulfillment_location_id,
+              i.max_quantity_per_order, i.daily_limit, l.name AS location_name
+       FROM items i JOIN fulfillment_locations l ON l.id = i.fulfillment_location_id
+       ORDER BY i.sort_order ASC, i.id ASC`
     );
 
     const orders = getAll<{ id: string; display_number: number; status: string; created_at: string; items: string | null; token: string }>(
       db,
       `SELECT o.id, o.display_number, o.status, o.created_at, o.token,
-       (SELECT GROUP_CONCAT(oi.item_name || ' x' || oi.quantity, ', ') FROM order_items oi WHERE oi.order_id = o.id) as items
+       (SELECT GROUP_CONCAT(l.name || ' [' ||
+          CASE f.status WHEN 'preparing' THEN '準備中' WHEN 'ready' THEN '提供可能' WHEN 'handed_over' THEN '受渡済' ELSE 'キャンセル' END ||
+          '] ' || oi.item_name || ' x' || oi.quantity, ', ')
+        FROM order_items oi
+        LEFT JOIN order_fulfillments f ON f.id = oi.fulfillment_id
+        LEFT JOIN fulfillment_locations l ON l.id = f.location_id
+        WHERE oi.order_id = o.id) as items
        FROM orders o ORDER BY o.created_at DESC LIMIT 200`
     ).map(order => ({ ...order, items: order.items ?? "" }));
 
-    const users = getAll<{ id: string; username: string; role: string; created_at: string }>(
+    const users = getAll<{ id: string; username: string; role: string; staff_type: string; fulfillment_location_id: number | null; location_name: string | null; created_at: string }>(
       db,
-      "SELECT id, username, role, created_at FROM users ORDER BY role ASC, username ASC"
+      `SELECT u.id, u.username, u.role, u.staff_type, u.fulfillment_location_id,
+              l.name AS location_name, u.created_at
+       FROM users u LEFT JOIN fulfillment_locations l ON l.id = u.fulfillment_location_id
+       ORDER BY u.role ASC, u.username ASC`
+    );
+
+    const locations = getAll<{ id: number; name: string; slug: string; active: number; sort_order: number; max_preparing_orders: number | null; max_preparing_units: number | null }>(
+      db,
+      "SELECT id, name, slug, active, sort_order, max_preparing_orders, max_preparing_units FROM fulfillment_locations ORDER BY sort_order ASC, id ASC",
+    );
+    const settings = getOne<{ ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number }>(
+      db,
+      "SELECT ordering_enabled, order_open_time, order_close_time, daily_order_limit, max_items_per_order, max_total_quantity FROM app_settings WHERE id = 1",
+    )!;
+    const events = getAll<{ display_number: number; location_name: string; from_status: string | null; to_status: string; username: string | null; created_at: string }>(
+      db,
+      `SELECT o.display_number, l.name AS location_name, e.from_status, e.to_status,
+              u.username, e.created_at
+       FROM fulfillment_events e
+       JOIN order_fulfillments f ON f.id = e.fulfillment_id
+       JOIN orders o ON o.id = f.order_id
+       JOIN fulfillment_locations l ON l.id = f.location_id
+       LEFT JOIN users u ON u.id = e.changed_by
+       ORDER BY e.created_at DESC, e.id DESC LIMIT 200`,
     );
 
     const currentNum = getCurrentDisplayNumber();
+    const flashMessages = consumeFlash();
 
-    return new Response(adminPage(items, orders, users, currentNum, securityNonce), {
+    return new Response(adminPage(items, orders, users, currentNum, securityNonce, locations, settings, events, flashMessages), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   })
 
-  .post("/api/admin/items", async ({ body, set, getUser }) => {
+  .post("/api/admin/items", async ({ body, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
-    const { name, sort_order } = (body ?? {}) as { name?: string; sort_order?: string };
+    const { name, sort_order, fulfillment_location_id } = (body ?? {}) as { name?: string; sort_order?: string; fulfillment_location_id?: string };
 
     const trimmedName = typeof name === "string" ? name.trim() : "";
     const parsedSortOrder = parseSortOrder(sort_order ?? "0");
-    if (!trimmedName || trimmedName.length > MAX_NAME_LENGTH || parsedSortOrder === null) {
-      set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("商品名を入力してください") };
-      return;
+    const locationId = typeof fulfillment_location_id === "string" && isPositiveInteger(fulfillment_location_id, 2_147_483_647) ? Number(fulfillment_location_id) : null;
+    const db = getDb();
+    if (!trimmedName || trimmedName.length > MAX_NAME_LENGTH || parsedSortOrder === null || !locationId || !getOne(db, "SELECT id FROM fulfillment_locations WHERE id = ? AND active = 1", locationId)) {
+      return redirectAdmin(addFlash, "error", "商品名と有効な提供場所を入力してください", "items");
     }
 
-    const db = getDb();
-    runSql(db, "INSERT INTO items (name, sort_order) VALUES (?, ?)", trimmedName, parsedSortOrder);
+    runSql(db, "INSERT INTO items (name, sort_order, fulfillment_location_id) VALUES (?, ?, ?)", trimmedName, parsedSortOrder, locationId);
 
-    set.status = 302;
-    set.headers = { Location: "/admin?success=" + encodeURIComponent("商品を追加しました") };
+    return redirectAdmin(addFlash, "success", "商品を追加しました", "items");
   })
 
-  .post("/api/admin/items/:id/rename", async ({ params: { id }, body, set, getUser }) => {
+  .post("/api/admin/items/:id/rename", async ({ params: { id }, body, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const { name } = (body ?? {}) as { name?: string };
     const itemId = parseItemId(id);
     const trimmedName = typeof name === "string" ? name.trim() : "";
     if (!itemId || !trimmedName || trimmedName.length > MAX_NAME_LENGTH) {
-      set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("商品名を入力してください") };
-      return;
+      return redirectAdmin(addFlash, "error", "商品名を入力してください", "items");
     }
     const db = getDb();
     runSql(db, "UPDATE items SET name = ? WHERE id = ?", trimmedName, itemId);
-    set.status = 302;
-    set.headers = { Location: "/admin?success=" + encodeURIComponent("商品名を更新しました") };
+    return redirectAdmin(addFlash, "success", "商品名を更新しました", "items");
   })
 
-  .post("/api/admin/items/:id/sort", async ({ params: { id }, body, set, getUser }) => {
+  .post("/api/admin/items/:id/sort", async ({ params: { id }, body, set, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const { sort_order } = (body ?? {}) as { sort_order?: string };
@@ -114,11 +141,10 @@ export const adminRoutes = new Elysia()
     if (!itemId || parsedSortOrder === null) { set.status = 400; return { error: "不正なデータです" }; }
     const db = getDb();
     runSql(db, "UPDATE items SET sort_order = ? WHERE id = ?", parsedSortOrder, itemId);
-    set.status = 302;
-    set.headers = { Location: "/admin?success=" + encodeURIComponent("表示順を更新しました") };
+    return redirectAdmin(addFlash, "success", "表示順を更新しました", "items");
   })
 
-  .post("/api/admin/items/:id/toggle-active", async ({ params: { id }, set, getUser }) => {
+  .post("/api/admin/items/:id/toggle-active", async ({ params: { id }, set, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const itemId = parseItemId(id);
@@ -128,11 +154,10 @@ export const adminRoutes = new Elysia()
     if (item) {
       runSql(db, "UPDATE items SET active = ? WHERE id = ?", item.active ? 0 : 1, itemId);
     }
-    set.status = 302;
-    set.headers = { Location: "/admin" };
+    return redirectAdmin(addFlash, "success", item?.active ? "商品の販売を停止しました" : "商品の販売を再開しました", "items");
   })
 
-  .post("/api/admin/items/:id/toggle-soldout", async ({ params: { id }, set, getUser }) => {
+  .post("/api/admin/items/:id/toggle-soldout", async ({ params: { id }, set, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const itemId = parseItemId(id);
@@ -142,12 +167,11 @@ export const adminRoutes = new Elysia()
     if (item) {
       runSql(db, "UPDATE items SET sold_out = ? WHERE id = ?", item.sold_out ? 0 : 1, itemId);
     }
-    wsManager.broadcastToMonitor({ numbers: getAvailableNumbers() });
-    set.status = 302;
-    set.headers = { Location: "/admin" };
+    wsManager.broadcastToMonitor(getMonitorBoard());
+    return redirectAdmin(addFlash, "success", item?.sold_out ? "売り切れを解除しました" : "商品を売り切れにしました", "items");
   })
 
-  .post("/api/admin/items/:id/delete", async ({ params: { id }, set, getUser }) => {
+  .post("/api/admin/items/:id/delete", async ({ params: { id }, set, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const db = getDb();
@@ -157,67 +181,80 @@ export const adminRoutes = new Elysia()
     const usageCount = getOne<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM order_items WHERE item_id = ?", itemId);
     if (usageCount && usageCount.cnt > 0) {
       runSql(db, "UPDATE items SET active = 0 WHERE id = ?", itemId);
-      set.status = 302;
-      set.headers = { Location: "/admin?success=" + encodeURIComponent("使用実績があるため、販売停止にしました") };
-      return;
+      return redirectAdmin(addFlash, "success", "使用実績があるため、販売停止にしました", "items");
     }
 
     runSql(db, "DELETE FROM items WHERE id = ?", itemId);
-    set.status = 302;
-    set.headers = { Location: "/admin?success=" + encodeURIComponent("商品を削除しました") };
+    return redirectAdmin(addFlash, "success", "商品を削除しました", "items");
   })
 
-  .post("/api/admin/users", async ({ body, set, getUser }) => {
+  .post("/api/admin/users", async ({ body, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
-    const { username, password } = (body ?? {}) as { username?: string; password?: string };
+    const { username, password, staff_type, fulfillment_location_id } = (body ?? {}) as { username?: string; password?: string; staff_type?: string; fulfillment_location_id?: string };
 
     const trimmedUsername = typeof username === "string" ? username.trim() : "";
     if (!trimmedUsername || trimmedUsername.length > MAX_USERNAME_LENGTH || typeof password !== "string" || password.length === 0 || password.length > 128) {
-      set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("ユーザー名とパスワードを入力してください") };
-      return;
+      return redirectAdmin(addFlash, "error", "ユーザー名とパスワードを入力してください", "users");
     }
 
+    const type = staff_type === "provider" ? "provider" : "cashier";
+    const locationId = type === "provider" && typeof fulfillment_location_id === "string" && isPositiveInteger(fulfillment_location_id, 2_147_483_647)
+      ? Number(fulfillment_location_id) : null;
     const db = getDb();
+    if (type === "provider" && (!locationId || !getOne(db, "SELECT id FROM fulfillment_locations WHERE id = ? AND active = 1", locationId))) {
+      return redirectAdmin(addFlash, "error", "提供担当には有効な提供場所を指定してください", "users");
+    }
     const existing = getOne<{ id: string }>(db, "SELECT id FROM users WHERE username = ?", trimmedUsername);
     if (existing) {
-      set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("このユーザー名は既に使用されています") };
-      return;
+      return redirectAdmin(addFlash, "error", "このユーザー名は既に使用されています", "users");
     }
 
     const id = crypto.randomUUID();
     const passwordHash = await Bun.password.hash(password);
-    runSql(db, "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, 'staff')", id, trimmedUsername, passwordHash);
+    runSql(db, "INSERT INTO users (id, username, password_hash, role, staff_type, fulfillment_location_id) VALUES (?, ?, ?, 'staff', ?, ?)", id, trimmedUsername, passwordHash, type, locationId);
 
-    set.status = 302;
-    set.headers = { Location: "/admin?success=" + encodeURIComponent("スタッフを追加しました") };
+    return redirectAdmin(addFlash, "success", "スタッフを追加しました", "users");
   })
 
-  .post("/api/admin/users/:id/delete", async ({ params: { id }, set, getUser }) => {
+  .post("/api/admin/users/:id/delete", async ({ params: { id }, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const db = getDb();
     const target = getOne<{ role: string }>(db, "SELECT role FROM users WHERE id = ?", id);
 
     if (!target) {
-      set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("ユーザーが見つかりません") };
-      return;
+      return redirectAdmin(addFlash, "error", "ユーザーが見つかりません", "users");
     }
 
     if (target.role === "admin") {
-      set.status = 302;
-      set.headers = { Location: "/admin?error=" + encodeURIComponent("管理者は削除できません") };
-      return;
+      return redirectAdmin(addFlash, "error", "管理者は削除できません", "users");
     }
 
     runSql(db, "DELETE FROM sessions WHERE user_id = ?", id);
     runSql(db, "DELETE FROM users WHERE id = ?", id);
 
-    set.status = 302;
-    set.headers = { Location: "/admin?success=" + encodeURIComponent("ユーザーを削除しました") };
+    return redirectAdmin(addFlash, "success", "ユーザーを削除しました", "users");
+  })
+
+  .post("/api/admin/users/:id/settings", ({ params: { id }, body, set, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const data = (body ?? {}) as { staff_type?: string; fulfillment_location_id?: string };
+    const type = data.staff_type === "provider" ? "provider" : "cashier";
+    const locationId = type === "provider" && data.fulfillment_location_id && isPositiveInteger(data.fulfillment_location_id, 2_147_483_647)
+      ? Number(data.fulfillment_location_id) : null;
+    const db = getDb();
+    const target = getOne<{ role: string }>(db, "SELECT role FROM users WHERE id = ?", id);
+    if (!target || target.role === "admin") { set.status = 400; return { error: "変更できないユーザーです" }; }
+    if (type === "provider" && (!locationId || !getOne(db, "SELECT id FROM fulfillment_locations WHERE id = ? AND active = 1", locationId))) {
+      set.status = 400; return { error: "有効な提供場所を指定してください" };
+    }
+    db.transaction(() => {
+      runSql(db, "UPDATE users SET staff_type = ?, fulfillment_location_id = ? WHERE id = ?", type, locationId, id);
+      runSql(db, "DELETE FROM sessions WHERE user_id = ?", id);
+    })();
+    return redirectAdmin(addFlash, "success", "スタッフ設定を更新しました。対象ユーザーは再ログインしてください", "users");
   })
 
   .post("/api/admin/reset-numbers", async ({ set, getUser }) => {
@@ -236,6 +273,83 @@ export const adminRoutes = new Elysia()
     return { success: true };
   })
 
+  .post("/api/admin/locations", ({ body, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const { name, slug, sort_order } = (body ?? {}) as { name?: string; slug?: string; sort_order?: string };
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const trimmedSlug = typeof slug === "string" ? slug.trim().toLowerCase() : "";
+    const parsedSortOrder = parseSortOrder(sort_order ?? "0");
+    if (!trimmedName || trimmedName.length > MAX_NAME_LENGTH || !/^[a-z0-9-]{1,50}$/.test(trimmedSlug) || parsedSortOrder === null) {
+      return redirectAdmin(addFlash, "error", "提供場所名と英数字の識別子を入力してください", "locations");
+    }
+    try { runSql(getDb(), "INSERT INTO fulfillment_locations (name, slug, sort_order) VALUES (?, ?, ?)", trimmedName, trimmedSlug, parsedSortOrder); }
+    catch { return redirectAdmin(addFlash, "error", "その識別子は既に使用されています", "locations"); }
+    return redirectAdmin(addFlash, "success", "提供場所を追加しました", "locations");
+  })
+
+  .post("/api/admin/locations/:id/settings", ({ params: { id }, body, set, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const locationId = parseItemId(id);
+    const data = (body ?? {}) as Record<string, string | undefined>;
+    const name = data.name?.trim() ?? "";
+    const sortOrder = parseSortOrder(data.sort_order ?? "0");
+    const maxOrders = data.max_preparing_orders ? Number(data.max_preparing_orders) : null;
+    const maxUnits = data.max_preparing_units ? Number(data.max_preparing_units) : null;
+    if (!locationId || !name || name.length > MAX_NAME_LENGTH || sortOrder === null || (maxOrders !== null && (!Number.isInteger(maxOrders) || maxOrders < 1)) || (maxUnits !== null && (!Number.isInteger(maxUnits) || maxUnits < 1))) {
+      set.status = 400; return { error: "不正な提供場所設定です" };
+    }
+    runSql(getDb(), "UPDATE fulfillment_locations SET name = ?, sort_order = ?, max_preparing_orders = ?, max_preparing_units = ?, updated_at = datetime('now') WHERE id = ?", name, sortOrder, maxOrders, maxUnits, locationId);
+    return redirectAdmin(addFlash, "success", "提供場所を更新しました", "locations");
+  })
+
+  .post("/api/admin/locations/:id/toggle-active", ({ params: { id }, set, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const locationId = parseItemId(id);
+    if (!locationId) { set.status = 400; return { error: "不正な提供場所IDです" }; }
+    const db = getDb();
+    const location = getOne<{ active: number }>(db, "SELECT active FROM fulfillment_locations WHERE id = ?", locationId);
+    if (!location) { set.status = 404; return { error: "提供場所が見つかりません" }; }
+    runSql(db, "UPDATE fulfillment_locations SET active = ?, updated_at = datetime('now') WHERE id = ?", location.active ? 0 : 1, locationId);
+    wsManager.broadcastToMonitor(getMonitorBoard());
+    return redirectAdmin(addFlash, "success", location.active ? "提供場所を停止しました" : "提供場所を再開しました", "locations");
+  })
+
+  .post("/api/admin/items/:id/settings", ({ params: { id }, body, set, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const itemId = parseItemId(id);
+    const data = (body ?? {}) as Record<string, string | undefined>;
+    const locationId = data.fulfillment_location_id && isPositiveInteger(data.fulfillment_location_id, 2_147_483_647) ? Number(data.fulfillment_location_id) : null;
+    const maxPerOrder = data.max_quantity_per_order ? Number(data.max_quantity_per_order) : null;
+    const dailyLimit = data.daily_limit ? Number(data.daily_limit) : null;
+    if (!itemId || !locationId || (maxPerOrder !== null && (!Number.isInteger(maxPerOrder) || maxPerOrder < 1)) || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1))) {
+      set.status = 400; return { error: "不正な商品設定です" };
+    }
+    runSql(getDb(), "UPDATE items SET fulfillment_location_id = ?, max_quantity_per_order = ?, daily_limit = ? WHERE id = ?", locationId, maxPerOrder, dailyLimit, itemId);
+    return redirectAdmin(addFlash, "success", "商品設定を更新しました", "items");
+  })
+
+  .post("/api/admin/settings/orders", ({ body, set, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const data = (body ?? {}) as Record<string, string | undefined>;
+    const enabled = data.ordering_enabled === "1" ? 1 : 0;
+    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const openTime = data.order_open_time?.trim() || null;
+    const closeTime = data.order_close_time?.trim() || null;
+    const dailyLimit = data.daily_order_limit ? Number(data.daily_order_limit) : null;
+    const maxItems = Number(data.max_items_per_order);
+    const maxQuantity = Number(data.max_total_quantity);
+    if ((openTime && !timePattern.test(openTime)) || (closeTime && !timePattern.test(closeTime)) || (openTime && closeTime && openTime >= closeTime) || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1)) || !Number.isInteger(maxItems) || maxItems < 1 || maxItems > 100 || !Number.isInteger(maxQuantity) || maxQuantity < 1 || maxQuantity > 10000) {
+      set.status = 400; return { error: "不正な注文設定です" };
+    }
+    runSql(getDb(), "UPDATE app_settings SET ordering_enabled = ?, order_open_time = ?, order_close_time = ?, daily_order_limit = ?, max_items_per_order = ?, max_total_quantity = ?, updated_at = datetime('now') WHERE id = 1", enabled, openTime, closeTime, dailyLimit, maxItems, maxQuantity);
+    return redirectAdmin(addFlash, "success", "注文設定を更新しました", "settings");
+  })
+
   .post("/api/admin/cleanup", async ({ getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
@@ -243,7 +357,15 @@ export const adminRoutes = new Elysia()
     const deleteOldOrders = db.transaction(() => {
       runSql(
         db,
+        "DELETE FROM fulfillment_events WHERE fulfillment_id IN (SELECT id FROM order_fulfillments WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled')))"
+      );
+      runSql(
+        db,
         "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled'))"
+      );
+      runSql(
+        db,
+        "DELETE FROM order_fulfillments WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled'))"
       );
       return runSql(
         db,

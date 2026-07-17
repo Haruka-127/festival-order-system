@@ -1,139 +1,72 @@
 import { config } from "../config";
 
+type Fulfillment = { id?: string; location_name: string; status: string; items: { name: string; quantity: number }[] };
 type OrderData = {
   display_number: number;
   status: string;
   created_at: string;
-  items: { name: string; quantity: number }[];
+  fulfillments?: Fulfillment[];
+  items?: { name: string; quantity: number }[];
+};
+
+const statusLabels: Record<string, string> = {
+  preparing: "準備中です",
+  partially_ready: "一部の商品を受け取れます",
+  available: "すべての商品を受け取れます",
+  delivered: "受け渡しが完了しました",
+  cancelled: "キャンセルされました",
 };
 
 export function customerPage(order: OrderData, token: string, securityNonce = ""): string {
-  const statusLabel: Record<string, string> = {
-    preparing: "準備中",
-    available: "お召し上がりいただけます",
-    delivered: "お渡し済み",
-    cancelled: "キャンセル",
-  };
+  const fulfillments = normalizeFulfillments(order);
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>注文状況 - 文化祭</title>
   <style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#fff;color:#111827;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
-    .card{background:#fff;border-radius:8px;padding:32px 24px;max-width:420px;width:100%;text-align:center;border:1px solid #e5e7eb;box-shadow:none}
-    .order-number{font-size:4rem;font-weight:800;color:#111827;line-height:1;margin:8px 0 4px}
-    .order-label{font-size:1rem;color:#6b7280;margin-bottom:16px}
-    .status-display{display:flex;align-items:center;justify-content:center;padding:20px 16px;border:1px solid #d1d5db;border-radius:8px;margin:18px 0;background:#fff}
-    .status-display.available{border-color:#111827;animation:availablePop .5s ease-out}
-    .status-display.cancelled{border-color:#fecaca}
-    .status-text{font-size:1.3rem;font-weight:700}
-    .status-text.preparing{color:#111827}
-    .status-text.available{color:#111827}
-    .status-text.cancelled{color:#991b1b}
-    .status-text.delivered{color:#111827}
-    .items-list{text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0}
-    .items-list h3{font-size:0.9rem;color:#6b7280;margin-bottom:8px}
-    .item-row{display:flex;justify-content:space-between;padding:4px 0;font-size:1rem}
-    .item-row .qty{color:#6b7280}
-    .access-time{font-size:0.8rem;color:#9ca3af}
-    .progress-bar{width:100%;height:4px;background:#e5e7eb;border-radius:2px;margin:16px 0;overflow:hidden}
-    .progress-bar .fill{height:100%;border-radius:2px;transition:width .5s ease;background:#111827}
-    @keyframes availablePop{0%{transform:scale(.95)}50%{transform:scale(1.02)}100%{transform:scale(1)}}
-    @media(max-width:400px){
-      .card{padding:24px 16px}
-      .order-number{font-size:3rem}
-    }
+    *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:#f3f4f6;color:#111827;padding:18px}.card{max-width:520px;margin:auto;background:#fff;padding:24px;border:1px solid #e5e7eb}.label{text-align:center;color:#6b7280}.number{text-align:center;font-size:64px;font-weight:850;line-height:1.1}.overall{text-align:center;font-size:20px;font-weight:750;padding:15px;margin:16px 0;border-top:2px solid #111827;border-bottom:2px solid #111827}.overall.available,.overall.partially_ready{color:#166534;border-color:#166534}.overall.cancelled{color:#991b1b;border-color:#991b1b}.location{padding:16px 0;border-bottom:1px solid #d1d5db}.location:last-child{border-bottom:0}.location-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.location-name{font-size:18px;font-weight:800}.status{font-size:13px;font-weight:750;padding:4px 8px;background:#e5e7eb}.status.ready{background:#dcfce7;color:#166534}.status.handed_over{background:#111827;color:#fff}.status.cancelled{background:#fee2e2;color:#991b1b}.item{display:flex;justify-content:space-between;color:#4b5563;margin-top:7px}.time{color:#9ca3af;font-size:12px;text-align:center;margin-top:18px}
   </style>
 </head>
-<body>
-  <div class="card">
-    <div style="font-size:0.9rem;color:#6b7280;margin-bottom:8px">受付番号</div>
-    <div class="order-number">${config.displayNumberPad(order.display_number)}</div>
+<body><main class="card">
+  <div class="label">受付番号</div><div class="number">${config.displayNumberPad(order.display_number)}</div>
+  <div id="overall" class="overall ${escapeHtml(order.status)}">${escapeHtml(statusLabels[order.status] ?? order.status)}</div>
+  <div id="fulfillments">${renderFulfillments(fulfillments)}</div>
+  <div class="time">ご注文日時: ${new Date(order.created_at).toLocaleString("ja-JP")}</div>
+</main>
+<script nonce="${securityNonce}">
+  const token = ${JSON.stringify(token).replace(/</g, "\\u003c")};
+  const escapeHtml = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const overallLabels = { preparing:'準備中です', partially_ready:'一部の商品を受け取れます', available:'すべての商品を受け取れます', delivered:'受け渡しが完了しました', cancelled:'キャンセルされました' };
+  const fulfillmentLabels = { preparing:'準備中', ready:'提供可能', handed_over:'受渡済み', cancelled:'キャンセル' };
+  let socket = null;
 
-    <div class="status-display ${order.status}" id="status-display">
-      <div class="status-text ${order.status}" id="status-text">${statusLabel[order.status]}</div>
-    </div>
-
-    <div class="progress-bar">
-      <div class="fill" id="progress-fill" style="width:${order.status === "preparing" ? "30" : order.status === "available" ? "70" : "100"}%"></div>
-    </div>
-
-    <div class="items-list">
-      <h3>ご注文内容</h3>
-      ${order.items.map(i => `<div class="item-row"><span>${escapeHtml(i.name)}</span><span class="qty">×${i.quantity}</span></div>`).join("")}
-    </div>
-
-    <div class="access-time">ご注文日時: ${new Date(order.created_at).toLocaleString("ja-JP")}</div>
-  </div>
-
-  <script nonce="${securityNonce}">
-    let ws = null;
-    let reconnectTimer = null;
-    const token = ${JSON.stringify(token).replace(/</g, "\\u003c")};
-
-    function connect() {
-      if (ws && ws.readyState <= 1) return;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(protocol + '//' + window.location.host + '/ws/order/' + token);
-
-      ws.onopen = () => {
-        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      };
-
-      ws.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'order_update') {
-            updateStatus(data.status);
-          }
-        } catch(err) {}
-      };
-
-      ws.onclose = () => {
-        ws = null;
-        reconnectTimer = setTimeout(connect, 3000);
-      };
-
-      ws.onerror = () => {
-        ws && ws.close();
-      };
-    }
-
-    function updateStatus(status) {
-      const display = document.getElementById('status-display');
-      const text = document.getElementById('status-text');
-      const progress = document.getElementById('progress-fill');
-
-      const labels = { preparing: '準備中', available: 'お召し上がりいただけます', delivered: 'お渡し済み', cancelled: 'キャンセル' };
-
-      display.className = 'status-display ' + status;
-      text.className = 'status-text ' + status;
-      text.textContent = labels[status] || status;
-
-      if (status === 'preparing') progress.style.width = '30%';
-      else if (status === 'available') progress.style.width = '70%';
-      else progress.style.width = '100%';
-    }
-
-    async function init() {
-      try {
-        const res = await fetch('/api/order/' + token);
-        if (res.ok) {
-          const data = await res.json();
-          updateStatus(data.status);
-        }
-      } catch(e) {}
-      connect();
-    }
-    init();
-  </script>
-</body>
-</html>`;
+  function render(data) {
+    const overall = document.getElementById('overall'); overall.className = 'overall ' + data.status; overall.textContent = overallLabels[data.status] || data.status;
+    document.getElementById('fulfillments').innerHTML = (data.fulfillments || []).map(f => '<section class="location"><div class="location-head"><div class="location-name">' + escapeHtml(f.location_name) + '</div><div class="status ' + escapeHtml(f.status) + '">' + (fulfillmentLabels[f.status] || escapeHtml(f.status)) + '</div></div>' + (f.items || []).map(item => '<div class="item"><span>' + escapeHtml(item.name) + '</span><strong>×' + item.quantity + '</strong></div>').join('') + '</section>').join('');
+  }
+  async function load() { const response = await fetch('/api/order/' + token); if (response.ok) render(await response.json()); }
+  function connect() {
+    if (socket && socket.readyState <= 1) return;
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'; socket = new WebSocket(protocol + '//' + location.host + '/ws/order/' + token);
+    socket.onmessage = event => { try { const data = JSON.parse(event.data); if (data.type === 'order_update') render(data); } catch {} };
+    socket.onclose = () => { socket = null; setTimeout(connect, 3000); }; socket.onerror = () => socket && socket.close();
+  }
+  load().then(connect);
+</script></body></html>`;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+function normalizeFulfillments(order: OrderData): Fulfillment[] {
+  if (order.fulfillments) return order.fulfillments;
+  return [{ location_name: "ご注文内容", status: order.status === "available" ? "ready" : order.status, items: order.items ?? [] }];
+}
+
+function renderFulfillments(fulfillments: Fulfillment[]): string {
+  const labels: Record<string, string> = { preparing: "準備中", ready: "提供可能", handed_over: "受渡済み", cancelled: "キャンセル", available: "提供可能", delivered: "受渡済み" };
+  return fulfillments.map(fulfillment => `<section class="location"><div class="location-head"><div class="location-name">${escapeHtml(fulfillment.location_name)}</div><div class="status ${escapeHtml(fulfillment.status)}">${escapeHtml(labels[fulfillment.status] ?? fulfillment.status)}</div></div>${fulfillment.items.map(item => `<div class="item"><span>${escapeHtml(item.name)}</span><strong>×${item.quantity}</strong></div>`).join("")}</section>`).join("");
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

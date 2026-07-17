@@ -10,6 +10,12 @@ const loginIpLimiter = new LoginRateLimiter(50);
 const loginAccountLimiter = new LoginRateLimiter(10);
 const DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=2,p=1$oYqXuWeZfV6iBuu8r7w8JmLbbzDuAtjPIataUBNhvjs$9Ep/Em/QRnNBTNTG9/5V7zD2u9vU2gYsM8S6X9mMJbU";
 
+function homeForRole(role: string): string {
+  if (role === "admin") return "/admin";
+  if (role === "provider") return "/provider";
+  return "/staff";
+}
+
 function generateId(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -34,14 +40,14 @@ export const authRoutes = new Elysia()
   .use(authMiddleware)
   .get("/login", ({ getUser }) => {
     const user = getUser();
-    if (user) return new Response(null, { status: 302, headers: { Location: user.role === "admin" ? "/admin" : "/staff" } });
+    if (user) return new Response(null, { status: 302, headers: { Location: homeForRole(user.role) } });
     return new Response(loginPage(), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .post("/login", async ({ body, set, cookie: { session_id }, getUser, request, server }) => {
     const user = getUser();
     if (user) {
       set.status = 302;
-      set.headers = { Location: user.role === "admin" ? "/admin" : "/staff" };
+      set.headers = { Location: homeForRole(user.role) };
       return;
     }
 
@@ -59,9 +65,9 @@ export const authRoutes = new Elysia()
     }
 
     const db = getDb();
-    const row = getOne<{ id: string; password_hash: string; role: string }>(
+    const row = getOne<{ id: string; password_hash: string; role: string; staff_type: string }>(
       db,
-      "SELECT id, password_hash, role FROM users WHERE username = ?",
+      "SELECT id, password_hash, role, staff_type FROM users WHERE username = ?",
       username
     );
 
@@ -97,7 +103,7 @@ export const authRoutes = new Elysia()
     });
 
     set.status = 302;
-    set.headers = { Location: row.role === "admin" ? "/admin" : "/staff" };
+    set.headers = { Location: homeForRole(row.role === "admin" ? "admin" : row.staff_type) };
   })
   .post("/logout", ({ set, cookie: { session_id } }) => {
     const sid = session_id?.value;

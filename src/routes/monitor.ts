@@ -1,21 +1,11 @@
 import { Elysia } from "elysia";
-import { getAll, getDb } from "../db/database";
+import { getMonitorBoard } from "../services/fulfillment";
 import { monitorPage } from "../views/monitor";
-
-function getAvailableNumbers(): number[] {
-  const db = getDb();
-  const rows = getAll<{ display_number: number }>(
-    db,
-    "SELECT display_number FROM orders WHERE status = 'available' ORDER BY display_number ASC"
-  );
-  return rows.map(r => r.display_number);
-}
 
 export const monitorRoutes = new Elysia()
   .get("/monitor", (context) => {
     const { securityNonce } = context as typeof context & { securityNonce: string };
     return new Response(monitorPage(securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
-  .get("/api/monitor/numbers", () => {
-    return { numbers: getAvailableNumbers() };
-  });
+  .get("/api/monitor/board", () => getMonitorBoard())
+  .get("/api/monitor/numbers", () => getMonitorBoard());

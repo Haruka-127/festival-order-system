@@ -1,6 +1,7 @@
 import { test, expect, beforeAll, afterAll } from "bun:test";
 import { setupTestDb, cleanupTestDb } from "./setup";
 import { getDb, getOne, runSql } from "../src/db/database";
+import { consumeFlashMessages, enqueueFlashMessage } from "../src/services/flash";
 
 beforeAll(() => setupTestDb());
 afterAll(() => cleanupTestDb());
@@ -98,4 +99,33 @@ test("duplicate username is rejected", () => {
     runSql(db, "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
       "dup-id", "admin", "hash", "staff");
   }).toThrow();
+});
+
+test("session flash messages are queued and consumed only once", () => {
+  const db = getDb();
+  const future = new Date(Date.now() + 86400000).toISOString();
+  runSql(db, "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)", "flash-session", "admin-id", future);
+
+  enqueueFlashMessage("flash-session", "success", "更新しました", "settings");
+  enqueueFlashMessage("flash-session", "error", "入力を確認してください", "items");
+
+  expect(consumeFlashMessages("flash-session")).toEqual([
+    { kind: "success", message: "更新しました", targetTab: "settings" },
+    { kind: "error", message: "入力を確認してください", targetTab: "items" },
+  ]);
+  expect(consumeFlashMessages("flash-session")).toEqual([]);
+  runSql(db, "DELETE FROM sessions WHERE id = ?", "flash-session");
+});
+
+test("session flash queue retains only the latest ten messages", () => {
+  const db = getDb();
+  const future = new Date(Date.now() + 86400000).toISOString();
+  runSql(db, "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)", "flash-limit-session", "admin-id", future);
+  for (let index = 0; index < 12; index++) enqueueFlashMessage("flash-limit-session", "success", `message-${index}`);
+
+  const messages = consumeFlashMessages("flash-limit-session");
+  expect(messages).toHaveLength(10);
+  expect(messages[0]?.message).toBe("message-2");
+  expect(messages[9]?.message).toBe("message-11");
+  runSql(db, "DELETE FROM sessions WHERE id = ?", "flash-limit-session");
 });
