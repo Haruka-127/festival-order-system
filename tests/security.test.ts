@@ -56,6 +56,7 @@ describe("security primitives", () => {
     applySecurityHeaders(headers, "/admin", "testnonce");
     expect(headers["X-Frame-Options"]).toBe("DENY");
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
+    expect(headers["Referrer-Policy"]).toBe("same-origin");
     expect(headers["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
     expect(headers["Content-Security-Policy"]).toContain("script-src 'nonce-testnonce'");
     expect(headers["Content-Security-Policy"]).not.toContain("script-src 'self' 'unsafe-inline'");

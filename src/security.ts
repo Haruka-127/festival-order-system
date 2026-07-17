@@ -31,7 +31,7 @@ export function isValidWebSocketOrigin(request: Request): boolean {
 export function applySecurityHeaders(headers: Record<string, string | number>, _pathname: string, scriptNonce?: string): void {
   headers["X-Content-Type-Options"] = "nosniff";
   headers["X-Frame-Options"] = "DENY";
-  headers["Referrer-Policy"] = "no-referrer";
+  headers["Referrer-Policy"] = "same-origin";
   headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
   headers["Cross-Origin-Resource-Policy"] = "same-origin";
   headers["Cross-Origin-Opener-Policy"] = "same-origin";
