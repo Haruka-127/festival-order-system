@@ -70,7 +70,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
     .cart-item{display:flex;justify-content:space-between;align-items:center;gap:14px;min-height:48px;padding:7px 0;border-bottom:1px solid #e5e7eb;font-weight:700}
     .cart-item:last-child{border-bottom:none}
     .cart-qty{display:grid;grid-template-columns:44px 36px 44px;align-items:center;text-align:center;flex:0 0 auto}
-    .cart-qty button{width:44px;height:44px;border-radius:2px;border:1px solid #9ca3af;background:#fff;font-size:20px;font-weight:800;display:flex;align-items:center;justify-content:center}
+    .cart-qty button{width:44px;height:44px;border-radius:2px;border:1px solid #9ca3af;background:#fff;color:var(--ink);font-size:20px;font-weight:800;display:flex;align-items:center;justify-content:center}
     .cart-qty button:active{background:var(--green-soft)}
     .cart-total{display:flex;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:2px solid var(--ink);font-size:17px;font-weight:850}
     .order-card{border:1px solid var(--line);border-left:7px solid #9ca3af;border-radius:0;padding:14px 14px 13px;margin-bottom:10px;background:#fff}
@@ -98,7 +98,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
     .modal-content .qr-wrap img{max-width:200px;height:auto}
     .modal-close{margin-top:12px}
     .search-box{margin:0}
-    .search-box input{width:100%;min-height:46px;padding:10px 14px;border:1px solid #9ca3af;border-radius:2px;font-size:15px;background:#fff}
+    .search-box input{width:100%;min-height:46px;padding:10px 14px;border:1px solid #9ca3af;border-radius:2px;font-size:15px;background:#fff;color:var(--ink)}
     .search-box input:focus{border-color:var(--green)}
     .tabs{display:flex;gap:0;margin-bottom:12px;border:1px solid var(--line)}
     .tab{flex:1;min-height:44px;padding:9px 8px;border:0;border-right:1px solid var(--line);border-bottom:4px solid transparent;border-radius:0;font-size:13px;font-weight:800;background:#fff;color:#4b5563;transition:background-color .15s,color .15s;white-space:nowrap;line-height:1.2}

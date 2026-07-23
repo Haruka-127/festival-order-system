@@ -16,6 +16,7 @@ export function monitorPage(securityNonce = ""): string {
     .content.dense .location{margin-bottom:8px}.content.dense .location-name{font-size:clamp(17px,1.3vw,24px)}.content.dense .number{font-size:clamp(40px,4vw,68px);line-height:1}
     .guidance{border-top:2px solid #111827;padding:clamp(12px,1.8vh,22px) 24px;text-align:center;font-size:clamp(20px,1.8vw,34px);font-weight:700;line-height:1.25}.page{position:fixed;right:14px;bottom:8px;color:#6b7280;font-size:13px}
     .number.new{animation:number-fade-in 400ms ease-out}@keyframes number-fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    @media(max-width:640px){html,body{height:auto;min-height:100%;overflow:auto}.screen{height:auto;min-height:100dvh}.board{grid-template-columns:1fr}.column+ .column{border-left:0;border-top:2px solid var(--divider)}.content{min-height:120px;overflow:visible;padding:16px 20px}.title{padding:14px;font-size:28px}.location-name{font-size:19px}.number,.content.dense .number{font-size:48px}.guidance{padding:14px 18px;font-size:18px}.page{position:static;padding:0 14px 8px;text-align:right}}
     @media(prefers-reduced-motion:reduce){.number.new{animation:none}}
   </style>
 </head>

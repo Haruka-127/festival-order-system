@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { adminPage } from "../src/views/admin";
 import { customerPage } from "../src/views/customer";
 import { monitorPage } from "../src/views/monitor";
+import { providerPage } from "../src/views/provider";
 import { staffPage } from "../src/views/staff";
 
 function extractInlineScripts(html: string): string[] {
@@ -49,6 +50,8 @@ describe("view scripts", () => {
     expect(html).toContain('id="submit-order"');
     expect(html).toContain('id="menu-grid"');
     expect(html).toContain('id="order-list"');
+    expect(html).toContain(".cart-qty button{width:44px;height:44px;border-radius:2px;border:1px solid #9ca3af;background:#fff;color:var(--ink)");
+    expect(html).toContain(".search-box input{width:100%;min-height:46px;padding:10px 14px;border:1px solid #9ca3af;border-radius:2px;font-size:15px;background:#fff;color:var(--ink)");
   });
 
   test("admin page inline scripts are valid JavaScript", () => {
@@ -92,6 +95,7 @@ describe("view scripts", () => {
     expect(html).toContain('data-open-dialog="location-editor-1"');
     expect(html).toContain('id="location-editor-1" class="editor-dialog"');
     expect(html).toContain("showModal()");
+    expect(html).toContain(".dialog-close{width:38px;height:38px;padding:0;border:1px solid var(--line);background:#fff;color:var(--ink)");
     expect(html).toContain('data-action="show-add-item" aria-controls="add-item-form" aria-expanded="false"');
     expect(html).toContain('id="add-item-form" class="add-panel" hidden');
     expect(html).toContain('data-action="show-add-user" aria-controls="add-user-form" aria-expanded="false"');
@@ -133,5 +137,15 @@ describe("view scripts", () => {
     const html = monitorPage("testnonce");
     expectInlineScriptsToParse(html);
     expectStrictScriptMarkup(html);
+    expect(html).toContain("@media(max-width:640px){html,body{height:auto;min-height:100%;overflow:auto}");
+    expect(html).toContain(".board{grid-template-columns:1fr}");
+  });
+
+  test("provider page logout button has an explicit visible text color", () => {
+    const html = providerPage("焼き場", [], "testnonce");
+    expectInlineScriptsToParse(html);
+    expectStrictScriptMarkup(html);
+    expect(html).toContain(".logout,.action{border:1px solid #d1d5db;background:#fff;color:#111827");
+    expect(html).toContain("grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))");
   });
 });

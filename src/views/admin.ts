@@ -92,7 +92,7 @@ export function adminPage(
     .editor-dialog::backdrop{background:rgba(17,24,39,.55)}
     .dialog-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;background:#fff;border-bottom:1px solid var(--line)}
     .dialog-head h3{font-size:18px}
-    .dialog-close{width:38px;height:38px;padding:0;border:1px solid var(--line);background:#fff;font-size:22px;line-height:1}
+    .dialog-close{width:38px;height:38px;padding:0;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:22px;line-height:1}
     .editor-dialog .editor-panel{min-width:0;margin:0;padding:18px;border:0;background:#fff}
     .dialog-footer{display:flex;justify-content:flex-end;padding-top:4px}
     .location-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
