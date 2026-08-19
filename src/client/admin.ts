@@ -4,12 +4,35 @@ type FlashMessage = { message: string; kind: "success" | "error"; targetTab?: st
 type CleanupPreview = { count: number; retention_days: number; oldest?: string | null; newest?: string | null };
 
 function showTab(name: string): void {
+      const targetSection = document.getElementById('tab-' + name);
+      if (!targetSection) return;
+      const mainTabName = targetSection.dataset.parentTab || name;
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
-      document.getElementById('tab-' + name)?.classList.add('active');
-      const activeTab = document.querySelector('.tab[data-tab="' + name + '"]');
+      targetSection.classList.add('active');
+      const activeTab = document.querySelector('.tab[data-tab="' + mainTabName + '"]');
       activeTab?.classList.add('active');
       activeTab?.setAttribute('aria-selected', 'true');
+      document.querySelector('.content-area')?.scrollIntoView({ block: 'start' });
+    }
+
+    function filterOrders(filter: string): void {
+      const activeStatuses = ['preparing', 'available'];
+      const completedStatuses = ['delivered', 'cancelled'];
+      let visibleCount = 0;
+      document.querySelectorAll<HTMLTableRowElement>('[data-order-status]').forEach(row => {
+        const status = row.dataset.orderStatus || '';
+        const visible = filter === 'all' || (filter === 'active' && activeStatuses.includes(status)) || (filter === 'completed' && completedStatuses.includes(status));
+        row.hidden = !visible;
+        if (visible) visibleCount += 1;
+      });
+      document.querySelectorAll<HTMLButtonElement>('[data-order-filter]').forEach(button => {
+        const selected = button.dataset.orderFilter === filter;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+      const emptyState = document.querySelector<HTMLElement>('[data-order-empty]');
+      if (emptyState) emptyState.hidden = visibleCount !== 0;
     }
 
     function toggleAddPanel(panelId: string, trigger: HTMLButtonElement): void {
@@ -100,6 +123,7 @@ function showTab(name: string): void {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null;
       if (!button) return;
       if (button.dataset.tab) showTab(button.dataset.tab);
+      else if (button.dataset.orderFilter) filterOrders(button.dataset.orderFilter);
       else if (button.dataset.openDialog) (document.getElementById(button.dataset.openDialog) as HTMLDialogElement | null)?.showModal();
       else if (button.hasAttribute('data-close-dialog')) button.closest('dialog')?.close();
       else if (button.dataset.action === 'show-add-item') toggleAddPanel('add-item-form', button);
@@ -120,3 +144,4 @@ function showTab(name: string): void {
     flashMessages.forEach((flash, index) => {
       setTimeout(() => showToast(flash.message, flash.kind), index * 3200);
     });
+    filterOrders('active');

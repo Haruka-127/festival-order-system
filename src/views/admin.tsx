@@ -33,24 +33,22 @@ return pageDocument({
     bodyAttributes: { "data-flash-messages": serializedFlashMessages },
     content: `
 <div class="app">
-    <div class="header">
+    <header class="header">
       <div class="header-title">
         <h1>管理画面</h1>
-        <div class="header-subtitle">商品・注文・スタッフ・提供場所の管理</div>
       </div>
-      <div class="flex">
-        <a href="/staff" class="btn btn-primary btn-sm">店員画面</a>
+      <div class="header-actions">
+        <a href="/staff" class="btn btn-primary btn-sm">店員画面へ</a>
         <form method="POST" action="/logout" class="inline-form">
           <button type="submit" class="btn btn-secondary btn-sm">ログアウト</button>
         </form>
       </div>
-    </div>
+    </header>
 
     <section class="overview" aria-label="現在の注文状況">
-      <div class="overview-item"><span class="overview-label">注文受付</span><strong class="overview-value">${settings.ordering_enabled ? "受付中" : "停止中"}</strong></div>
+      <div class="overview-item"><span class="status-dot ${settings.ordering_enabled ? "is-open" : "is-closed"}" aria-hidden="true"></span><span class="overview-label">注文</span><strong class="overview-value">${settings.ordering_enabled ? "受付中" : "停止中"}</strong></div>
       <div class="overview-item"><span class="overview-label">お待ち</span><strong class="overview-value">${orders.filter(o => o.status === "preparing").length}<small> 件</small></strong></div>
-      <div class="overview-item"><span class="overview-label">お呼び出し中</span><strong class="overview-value">${orders.filter(o => o.status === "available").length}<small> 件</small></strong></div>
-      <div class="overview-item"><span class="overview-label">現在の受付番号</span><strong class="overview-value">${currentNum ? config.displayNumberPad(currentNum.number) : "---"}</strong></div>
+      <div class="overview-item"><span class="overview-label">呼び出し中</span><strong class="overview-value">${orders.filter(o => o.status === "available").length}<small> 件</small></strong></div>
     </section>
 
     <div class="workspace">
@@ -58,9 +56,7 @@ return pageDocument({
         <button class="tab active" data-tab="items" role="tab" aria-selected="true" aria-controls="tab-items">商品</button>
         <button class="tab" data-tab="orders" role="tab" aria-selected="false" aria-controls="tab-orders">注文</button>
         <button class="tab" data-tab="users" role="tab" aria-selected="false" aria-controls="tab-users">スタッフ</button>
-        <button class="tab" data-tab="locations" role="tab" aria-selected="false" aria-controls="tab-locations">提供場所</button>
-        <button class="tab" data-tab="history" role="tab" aria-selected="false" aria-controls="tab-history">操作履歴</button>
-        <button class="tab" data-tab="settings" role="tab" aria-selected="false" aria-controls="tab-settings">システム設定</button>
+        <button class="tab" data-tab="settings" role="tab" aria-selected="false" aria-controls="tab-settings">設定</button>
       </div>
       <main class="content-area">
 
@@ -80,32 +76,23 @@ return pageDocument({
             <div><button type="submit" class="btn btn-primary">追加</button></div>
           </form>
         </div>
-        <table>
-          <thead><tr><th>商品</th><th>提供場所・上限</th><th>状態</th><th>操作</th></tr></thead>
+        <div class="table-wrap">
+        <table class="item-table">
+          <thead><tr><th>商品</th><th>状態</th><th><span class="sr-only">操作</span></th></tr></thead>
           <tbody>
             ${items.map(item => `
               <tr>
                 <td>
                   <div class="item-name">${escapeHtml(item.name)}</div>
-                  <div class="muted">表示順 ${item.sort_order}</div>
+                  <div class="muted">${escapeHtml(item.location_name ?? locations.find(location => location.id === item.fulfillment_location_id)?.name ?? "未設定")}</div>
                 </td>
                 <td>
-                  <div>${escapeHtml(item.location_name ?? locations.find(location => location.id === item.fulfillment_location_id)?.name ?? "未設定")}</div>
-                  <div class="muted">1注文 ${item.max_quantity_per_order ?? "上限なし"} ／ 1日 ${item.daily_limit ?? "上限なし"}</div>
+                  <span class="badge ${!item.active ? "badge-gray" : item.sold_out ? "badge-red" : "badge-green"}">${!item.active ? "停止中" : item.sold_out ? "売り切れ" : "販売中"}</span>
                 </td>
-                <td>
-                  ${item.active ? "" : '<span class="badge badge-gray">停止中</span> '}
-                  ${item.sold_out ? '<span class="badge badge-red">売り切れ</span>' : '<span class="badge badge-green">販売中</span>'}
-                </td>
-                <td>
+                <td class="actions-cell">
                   <div class="row-actions">
-                    <form method="POST" action="/api/admin/items/${item.id}/toggle-active" class="inline-form">
-                      <button type="submit" class="btn btn-sm ${item.active ? "btn-warning" : "btn-success"}">
-                        ${item.active ? "販売停止" : "販売再開"}
-                      </button>
-                    </form>
                     <form method="POST" action="/api/admin/items/${item.id}/toggle-soldout" class="inline-form">
-                      <button type="submit" class="btn btn-sm ${item.sold_out ? "btn-success" : "btn-warning"}">
+                      <button type="submit" class="btn btn-sm ${item.sold_out ? "btn-success" : ""}" ${item.active ? "" : "disabled"}>
                         ${item.sold_out ? "売切解除" : "売り切れ"}
                       </button>
                     </form>
@@ -127,6 +114,12 @@ return pageDocument({
                           <label>表示順</label><input type="number" name="sort_order" value="${item.sort_order}" required>
                           <button type="submit" class="btn btn-sm">表示順を更新</button>
                         </form>
+                        <div class="dialog-section">
+                          <span class="dialog-label">販売状態</span>
+                          <form method="POST" action="/api/admin/items/${item.id}/toggle-active">
+                            <button type="submit" class="btn btn-sm ${item.active ? "btn-danger" : "btn-success"}">${item.active ? "商品の販売を停止" : "商品の販売を再開"}</button>
+                          </form>
+                        </div>
                         <button type="button" class="btn btn-sm btn-danger" data-delete-item-id="${item.id}" data-delete-item-name="${escapeHtml(item.name)}">商品を削除</button>
                         <div class="dialog-footer"><button type="button" class="btn btn-sm" data-close-dialog>閉じる</button></div>
                       </div>
@@ -137,27 +130,38 @@ return pageDocument({
             `).join("")}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
 
     <!-- Orders Tab -->
     <div id="tab-orders" class="section">
       <div class="card">
-        <h2>注文</h2>
-        <table>
+        <div class="section-tools section-tools-wrap">
+          <div><h2>注文</h2><p class="section-description">最近の注文を確認できます</p></div>
+          <div class="filter-group" role="group" aria-label="注文状態で絞り込み">
+            <button type="button" class="filter-button active" data-order-filter="active" aria-pressed="true">対応中</button>
+            <button type="button" class="filter-button" data-order-filter="completed" aria-pressed="false">完了</button>
+            <button type="button" class="filter-button" data-order-filter="all" aria-pressed="false">すべて</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+        <table class="order-table">
           <thead><tr><th>受付番号</th><th>商品</th><th>状態</th><th>日時</th><th>詳細</th></tr></thead>
           <tbody>
             ${orders.map(o => `
-              <tr>
-                <td style="font-weight:700">${config.displayNumberPad(o.display_number)}</td>
-                <td style="font-size:13px">${escapeHtml(o.items)}</td>
+              <tr data-order-status="${escapeHtml(o.status)}" ${["preparing", "available"].includes(o.status) ? "" : "hidden"}>
+                <td class="order-number">${config.displayNumberPad(o.display_number)}</td>
+                <td class="order-items">${escapeHtml(o.items)}</td>
                 <td><span class="badge ${statusColors[o.status] || "badge-gray"}">${escapeHtml(statusLabels[o.status] || o.status)}</span></td>
-                <td style="font-size:12px;color:#6b7280">${formatDateTime(o.created_at)}</td>
-                <td><a href="/order/${encodeURIComponent(o.token)}" target="_blank" rel="noopener noreferrer" style="font-size:12px">開く</a></td>
+                <td class="muted">${formatDateTime(o.created_at)}</td>
+                <td><a href="/order/${encodeURIComponent(o.token)}" target="_blank" rel="noopener noreferrer" class="detail-link">詳細</a></td>
               </tr>
             `).join("")}
           </tbody>
         </table>
+        <p class="empty-state" data-order-empty hidden>該当する注文はありません</p>
+        </div>
       </div>
     </div>
 
@@ -178,15 +182,15 @@ return pageDocument({
             <div><button type="submit" class="btn btn-primary">追加</button></div>
           </form>
         </div>
-        <table>
-          <thead><tr><th>ユーザー名</th><th>権限</th><th>作成日</th><th>操作</th></tr></thead>
+        <div class="table-wrap">
+        <table class="user-table">
+          <thead><tr><th>ユーザー名</th><th>担当</th><th><span class="sr-only">操作</span></th></tr></thead>
           <tbody>
             ${users.map(u => `
               <tr>
                 <td>${escapeHtml(u.username)}</td>
-                <td><span class="badge ${u.role === "admin" ? "badge-blue" : "badge-gray"}">${u.role === "admin" ? "管理者" : u.staff_type === "provider" ? "提供担当" : "注文受付担当"}</span>${u.location_name ? `<br><small>${escapeHtml(u.location_name)}</small>` : ""}</td>
-                <td style="font-size:12px;color:#6b7280">${formatDateTime(u.created_at)}</td>
-                <td>
+                <td><span class="role-label">${u.role === "admin" ? "管理者" : u.staff_type === "provider" ? "提供担当" : "注文受付担当"}</span>${u.location_name ? `<span class="muted role-location">${escapeHtml(u.location_name)}</span>` : ""}</td>
+                <td class="actions-cell">
                   ${u.role !== "admin" ? `<button type="button" class="btn btn-sm" data-open-dialog="user-editor-${escapeHtml(u.id)}">編集</button>
                   <dialog id="user-editor-${escapeHtml(u.id)}" class="editor-dialog">
                     <div class="dialog-head"><h3>${escapeHtml(u.username)}を編集</h3><button type="button" class="dialog-close" data-close-dialog aria-label="閉じる">×</button></div>
@@ -209,11 +213,16 @@ return pageDocument({
             `).join("")}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
 
-    <!-- Locations Tab -->
-    <div id="tab-locations" class="section">
+    <!-- Secondary settings: Locations -->
+    <div id="tab-locations" class="section" data-parent-tab="settings">
+      <div class="subpage-heading">
+        <button type="button" class="back-button" data-tab="settings">← 設定へ戻る</button>
+        <h2>提供場所の設定</h2>
+      </div>
       <div class="card">
         <div class="section-tools"><h2>提供場所</h2><details class="editor"><summary>＋ 新規提供場所</summary><div class="editor-panel">
           <form method="POST" action="/api/admin/locations">
@@ -250,11 +259,15 @@ return pageDocument({
       </div>`).join("")}
     </div>
 
-    <!-- History Tab -->
-    <div id="tab-history" class="section">
+    <!-- Secondary settings: History -->
+    <div id="tab-history" class="section" data-parent-tab="settings">
+      <div class="subpage-heading">
+        <button type="button" class="back-button" data-tab="settings">← 設定へ戻る</button>
+        <h2>操作履歴</h2>
+      </div>
       <div class="card">
-        <h2>注文・提供状態の操作履歴</h2>
-        <table>
+        <p class="section-description history-description">直近200件の注文・提供状態の変更を表示しています</p>
+        <div class="table-wrap"><table class="history-table">
           <thead><tr><th>日時</th><th>受付番号</th><th>提供場所</th><th>変更</th><th>担当者</th></tr></thead>
           <tbody>${events.map(event => `<tr>
             <td style="font-size:12px">${formatDateTime(event.created_at)}</td>
@@ -263,59 +276,91 @@ return pageDocument({
             <td>${escapeHtml(eventDescription(event))}</td>
             <td>${escapeHtml(event.username ?? "システム")}</td>
           </tr>`).join("")}</tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
     <!-- Settings Tab -->
     <div id="tab-settings" class="section">
-      <div class="card">
-        <h2>注文受付設定</h2>
+      <div class="page-heading"><h2>設定</h2><p>営業中によく変更する項目だけを表示しています</p></div>
+      <div class="card settings-card">
+        <h3>注文受付</h3>
         <form method="POST" action="/api/admin/settings/orders">
-          <div class="form-row">
-            <div class="form-group"><label>受付状態</label><select name="ordering_enabled"><option value="1" ${settings.ordering_enabled ? "selected" : ""}>受付中</option><option value="0" ${!settings.ordering_enabled ? "selected" : ""}>停止中</option></select></div>
-            <div class="form-group"><label>開始時刻</label><input type="time" name="order_open_time" value="${settings.order_open_time ?? ""}"></div>
-            <div class="form-group"><label>終了時刻</label><input type="time" name="order_close_time" value="${settings.order_close_time ?? ""}"></div>
-            <div class="form-group"><label>1日注文数上限</label><input type="number" min="1" name="daily_order_limit" value="${settings.daily_order_limit ?? ""}"></div>
+          <div class="setting-row">
+            <div><div class="setting-label">受付状態</div><p class="setting-help">注文の受付をすぐに開始・停止します</p></div>
+            <div class="segmented-control">
+              <label><input type="radio" name="ordering_enabled" value="1" ${settings.ordering_enabled ? "checked" : ""}><span>受付中</span></label>
+              <label><input type="radio" name="ordering_enabled" value="0" ${!settings.ordering_enabled ? "checked" : ""}><span>停止中</span></label>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div><div class="setting-label">受付時間</div><p class="setting-help">未入力の場合は時刻による制限を行いません</p></div>
+            <div class="time-range"><label><span>開始</span><input type="time" name="order_open_time" value="${settings.order_open_time ?? ""}"></label><span aria-hidden="true">–</span><label><span>終了</span><input type="time" name="order_close_time" value="${settings.order_close_time ?? ""}"></label></div>
+          </div>
+          <input type="hidden" name="daily_order_limit" value="${settings.daily_order_limit ?? ""}">
+          <input type="hidden" name="max_items_per_order" value="${settings.max_items_per_order}">
+          <input type="hidden" name="max_total_quantity" value="${settings.max_total_quantity}">
+          <input type="hidden" name="completed_order_retention_days" value="${settings.completed_order_retention_days}">
+          <div class="settings-actions"><button type="submit" class="btn btn-primary">保存</button></div>
+        </form>
+      </div>
+
+      <div class="settings-links" aria-label="その他の設定">
+        <button type="button" class="settings-link" data-tab="locations"><span><strong>提供場所の設定</strong><small>${locations.length}か所の提供場所を管理</small></span><span aria-hidden="true">›</span></button>
+        <button type="button" class="settings-link" data-tab="history"><span><strong>操作履歴</strong><small>注文や提供状態の変更を確認</small></span><span aria-hidden="true">›</span></button>
+        <button type="button" class="settings-link" data-tab="advanced"><span><strong>詳細設定・データ管理</strong><small>注文上限、番号、バックアップなど</small></span><span aria-hidden="true">›</span></button>
+      </div>
+    </div>
+
+    <!-- Secondary settings: Advanced -->
+    <div id="tab-advanced" class="section" data-parent-tab="settings">
+      <div class="subpage-heading">
+        <button type="button" class="back-button" data-tab="settings">← 設定へ戻る</button>
+        <h2>詳細設定・データ管理</h2>
+      </div>
+      <div class="card compact-card">
+        <h3>注文上限とデータ保持</h3>
+        <form method="POST" action="/api/admin/settings/orders">
+          <input type="hidden" name="ordering_enabled" value="${settings.ordering_enabled ? "1" : "0"}">
+          <input type="hidden" name="order_open_time" value="${settings.order_open_time ?? ""}">
+          <input type="hidden" name="order_close_time" value="${settings.order_close_time ?? ""}">
+          <div class="form-grid">
+            <div class="form-group"><label>1日注文数上限</label><input type="number" min="1" name="daily_order_limit" value="${settings.daily_order_limit ?? ""}" placeholder="上限なし"></div>
             <div class="form-group"><label>1注文の商品種類上限</label><input type="number" min="1" max="100" name="max_items_per_order" value="${settings.max_items_per_order}" required></div>
             <div class="form-group"><label>1注文の合計数量上限</label><input type="number" min="1" max="10000" name="max_total_quantity" value="${settings.max_total_quantity}" required></div>
             <div class="form-group"><label>完了注文の保持日数</label><input type="number" min="1" max="3650" name="completed_order_retention_days" value="${settings.completed_order_retention_days}" required></div>
           </div>
-          <button type="submit" class="btn btn-primary">注文設定を更新</button>
+          <button type="submit" class="btn btn-primary">詳細設定を保存</button>
         </form>
       </div>
 
-      <div class="card">
-        <h2>管理者パスワード</h2>
+      <div class="card compact-card">
+        <h3>管理者パスワード</h3>
         <form method="POST" action="/api/admin/password" class="form-row">
           <div class="form-group"><label>現在のパスワード</label><input type="password" name="current_password" required></div>
           <div class="form-group"><label>新しいパスワード</label><input type="password" name="new_password" minlength="10" required></div>
           <div><button type="submit" class="btn btn-primary">パスワードを変更</button></div>
         </form>
       </div>
-      <div class="card">
-        <h2>番号設定</h2>
-        <div class="flex" style="align-items:center;gap:16px">
-          <div>
-            <div style="font-size:13px;color:#6b7280">現在の日付</div>
-            <div style="font-size:18px;font-weight:700">${currentNum ? currentNum.date : "---"}</div>
-          </div>
-          <div>
-            <div style="font-size:13px;color:#6b7280">現在の番号</div>
-            <div style="font-size:24px;font-weight:700;color:#111827">${currentNum ? config.displayNumberPad(currentNum.number) : "---"}</div>
-          </div>
+      <div class="card compact-card">
+        <h3>受付番号</h3>
+        <div class="number-summary">
+          <div><span>日付</span><strong>${currentNum ? currentNum.date : "---"}</strong></div>
+          <div><span>現在の番号</span><strong>${currentNum ? config.displayNumberPad(currentNum.number) : "---"}</strong></div>
         </div>
-        <div class="mt-2">
+        <div class="danger-action">
           <button class="btn btn-warning" data-action="reset-numbers">番号をリセット</button>
-          <span style="font-size:12px;color:#6b7280;margin-left:8px">※ 未処理の注文がない場合のみ、新しい注文を1番から採番します</span>
+          <span class="muted">未処理の注文がない場合のみ、新しい注文を1番から採番します</span>
         </div>
       </div>
 
-      <div class="card">
-        <h2>データ管理</h2>
-        <button type="button" class="btn" data-action="backup">今すぐバックアップ</button>
-        <button type="button" class="btn btn-danger" data-action="cleanup">古い注文を削除</button>
-        <span style="font-size:12px;color:#6b7280;margin-left:8px">${settings.completed_order_retention_days}日より古い受け渡し済み・キャンセル注文だけを削除します（監査履歴は保持）</span>
+      <div class="card compact-card">
+        <h3>データ管理</h3>
+        <div class="data-actions">
+          <button type="button" class="btn" data-action="backup">今すぐバックアップ</button>
+          <button type="button" class="btn btn-danger" data-action="cleanup">古い注文を削除</button>
+        </div>
+        <p class="setting-help">${settings.completed_order_retention_days}日より古い受渡済み・キャンセル注文だけを削除します。監査履歴は保持されます。</p>
       </div>
     </div>
       </main>
