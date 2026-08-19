@@ -7,6 +7,7 @@ const currentDate = document.body.dataset.currentDate ?? "";
 const digits = Number(document.body.dataset.displayDigits ?? "3");
 let socket: WebSocket | null = null;
 let reconnectDelay = 3000;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 function requiredElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -75,6 +76,12 @@ async function loadTasks(): Promise<void> {
     if (response.status === 401) { location.href = "/login"; return; }
     if (response.ok) { render(await response.json() as Task[]); setConnection("同期済み", false); }
   } catch { setConnection("オフライン・再接続中", true); }
+  finally { scheduleSync(); }
+}
+
+function scheduleSync(): void {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(loadTasks, socket?.readyState === WebSocket.OPEN ? 30_000 : 5_000);
 }
 
 async function updateStatus(id: string, status: TaskStatus): Promise<void> {
@@ -96,9 +103,14 @@ function connect(): void {
   if (socket && socket.readyState <= WebSocket.OPEN) return;
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${location.host}/ws/provider`);
-  socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); };
-  socket.onmessage = event => { try { const data = JSON.parse(String(event.data)) as { type?: string; tasks?: Task[] }; if (data.type === "provider_update") render(data.tasks ?? []); } catch {} };
-  socket.onclose = () => { socket = null; setConnection("再接続中", true); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
+  socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); scheduleSync(); };
+  socket.onmessage = event => {
+    try {
+      const data = JSON.parse(String(event.data)) as { type?: string; tasks?: Task[] };
+      if (data.type === "provider_update") render(data.tasks ?? []);
+    } catch (error) { console.warn("Invalid provider WebSocket message", error); }
+  };
+  socket.onclose = () => { socket = null; setConnection("再接続中", true); scheduleSync(); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
   socket.onerror = () => socket?.close();
 }
 
@@ -106,5 +118,4 @@ document.addEventListener("click", event => {
   const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-id][data-status]") : null;
   if (button?.dataset.id && button.dataset.status) void updateStatus(button.dataset.id, button.dataset.status as TaskStatus);
 });
-setInterval(loadTasks, 5000);
-connect();
+void loadTasks().then(connect);

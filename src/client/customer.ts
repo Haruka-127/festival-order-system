@@ -8,6 +8,7 @@ const fulfillmentLabels: Record<string, string> = { preparing: "準備中", read
 const token = document.body.dataset.orderToken ?? "";
 let socket: WebSocket | null = null;
 let reconnectDelay = 3000;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -59,17 +60,27 @@ async function load(): Promise<void> {
     const response = await fetch(`/api/order/${encodeURIComponent(token)}`);
     if (response.ok) { render(await response.json() as OrderUpdate); setConnection("同期済み", false); }
   } catch { setConnection("オフライン・再接続中", true); }
+  finally { scheduleSync(); }
+}
+
+function scheduleSync(): void {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(load, socket?.readyState === WebSocket.OPEN ? 60_000 : 15_000);
 }
 
 function connect(): void {
   if (socket && socket.readyState <= WebSocket.OPEN) return;
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${location.host}/ws/order/${encodeURIComponent(token)}`);
-  socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); };
-  socket.onmessage = event => { try { const data = JSON.parse(String(event.data)) as OrderUpdate & { type?: string }; if (data.type === "order_update") render(data); } catch {} };
-  socket.onclose = () => { socket = null; setConnection("再接続中", true); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
+  socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); scheduleSync(); };
+  socket.onmessage = event => {
+    try {
+      const data = JSON.parse(String(event.data)) as OrderUpdate & { type?: string };
+      if (data.type === "order_update") render(data);
+    } catch (error) { console.warn("Invalid order WebSocket message", error); }
+  };
+  socket.onclose = () => { socket = null; setConnection("再接続中", true); scheduleSync(); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
   socket.onerror = () => socket?.close();
 }
 
-setInterval(load, 15000);
 void load().then(connect);

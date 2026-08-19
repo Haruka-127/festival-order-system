@@ -30,9 +30,9 @@ describe("server-rendered views", () => {
     expect(html).toContain('id="order-list"');
     expect(html).not.toContain('href="/account/password"');
     expect(html).not.toContain('style=');
-    const client = await source("../src/client/staff.js");
-    expect(client).toContain("sessionStorage.getItem('staff-order-draft')");
-    expect(client).toContain("fetch('/api/staff/items')");
+    const client = await source("../src/client/staff.ts");
+    expect(client).toContain('sessionStorage.getItem("staff-order-draft")');
+    expect(client).toContain('fetch("/api/staff/items")');
     expect(client).toContain("キャンセル理由を入力してください");
     expect(client).not.toContain("innerHTML");
     expect(client).not.toContain(".style.");
@@ -110,7 +110,7 @@ describe("server-rendered views", () => {
     const html = customerPage({ display_number: 1, status: "preparing", created_at: "2026-06-25T00:00:00.000Z", items: [{ name: "ラーメン", quantity: 1 }] }, "token-1");
     expectExternalAssets(html, "customer");
     expect(html).toContain('data-order-token="token-1"');
-    expect(await source("../src/client/customer.ts")).toContain("setInterval(load, 15000)");
+    expect(await source("../src/client/customer.ts")).toContain("socket?.readyState === WebSocket.OPEN ? 60_000 : 15_000");
   });
 
   test("monitor page has external board assets", async () => {
@@ -118,8 +118,8 @@ describe("server-rendered views", () => {
     expectExternalAssets(html, "monitor");
     expect(html).toContain('id="connection"');
     expect(await source("../src/styles/monitor.css")).toContain(".board{grid-template-columns:1fr}");
-    const client = await source("../src/client/monitor.js");
-    expect(client).toContain("setInterval(load, 15000)");
+    const client = await source("../src/client/monitor.ts");
+    expect(client).toContain("CONNECTED_SYNC_INTERVAL = 60_000");
     expect(client).not.toContain("innerHTML");
   });
 
@@ -130,6 +130,6 @@ describe("server-rendered views", () => {
     expect(html).not.toContain('style=');
     expect(await source("../src/client/provider.ts")).toContain("受渡完了を取り消す");
     expect(await source("../src/styles/provider.css")).toContain("grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))");
-    expect(await source("../src/client/provider.ts")).toContain("setInterval(loadTasks, 5000)");
+    expect(await source("../src/client/provider.ts")).toContain("socket?.readyState === WebSocket.OPEN ? 30_000 : 5_000");
   });
 });
