@@ -8,9 +8,12 @@ import { wsManager } from "../services/websocket";
 import { isPositiveInteger } from "../security";
 import { getMonitorBoard } from "../services/fulfillment";
 import type { FlashKind, FlashTargetTab } from "../services/flash";
+import { recordAuditEvent } from "../services/audit";
+import { createDatabaseBackup } from "../services/backup";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_USERNAME_LENGTH = 64;
+const MIN_PASSWORD_LENGTH = 10;
 type AddFlash = (kind: FlashKind, message: string, targetTab?: FlashTargetTab | null) => void;
 
 function redirectAdmin(addFlash?: AddFlash, kind?: FlashKind, message?: string, targetTab?: FlashTargetTab): Response {
@@ -28,9 +31,13 @@ function parseSortOrder(value: unknown): number | null {
   return Number.isSafeInteger(parsed) && Math.abs(parsed) <= 1_000_000 ? parsed : null;
 }
 
-function requireAdmin(user: UserInfo | null): UserInfo | Response {
-  if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
-  if (user.role !== "admin") return new Response("アクセス権限がありません", { status: 403 });
+function requireAdmin(user: UserInfo | null, api = true): UserInfo | Response {
+  if (!user) return api
+    ? new Response(JSON.stringify({ error: "authentication_required" }), { status: 401, headers: { "Content-Type": "application/json; charset=utf-8" } })
+    : new Response(null, { status: 302, headers: { Location: "/login" } });
+  if (user.role !== "admin") return api
+    ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "Content-Type": "application/json; charset=utf-8" } })
+    : new Response("アクセス権限がありません", { status: 403 });
   return user;
 }
 
@@ -39,7 +46,7 @@ export const adminRoutes = new Elysia()
   .get("/admin", (context) => {
     const { getUser, consumeFlash } = context;
     const { securityNonce } = context as typeof context & { securityNonce: string };
-    const result = requireAdmin(getUser());
+    const result = requireAdmin(getUser(), false);
     if (result instanceof Response) return result;
     const db = getDb();
 
@@ -76,20 +83,16 @@ export const adminRoutes = new Elysia()
       db,
       "SELECT id, name, slug, active, sort_order, max_preparing_orders, max_preparing_units FROM fulfillment_locations ORDER BY sort_order ASC, id ASC",
     );
-    const settings = getOne<{ ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number }>(
+    const settings = getOne<{ ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number; completed_order_retention_days: number }>(
       db,
-      "SELECT ordering_enabled, order_open_time, order_close_time, daily_order_limit, max_items_per_order, max_total_quantity FROM app_settings WHERE id = 1",
+      "SELECT ordering_enabled, order_open_time, order_close_time, daily_order_limit, max_items_per_order, max_total_quantity, completed_order_retention_days FROM app_settings WHERE id = 1",
     )!;
-    const events = getAll<{ display_number: number; location_name: string; from_status: string | null; to_status: string; username: string | null; created_at: string }>(
+    const events = getAll<{ display_number: number; location_name: string | null; event_type: string; from_status: string | null; to_status: string | null; username: string | null; details: string | null; created_at: string }>(
       db,
-      `SELECT o.display_number, l.name AS location_name, e.from_status, e.to_status,
-              u.username, e.created_at
-       FROM fulfillment_events e
-       JOIN order_fulfillments f ON f.id = e.fulfillment_id
-       JOIN orders o ON o.id = f.order_id
-       JOIN fulfillment_locations l ON l.id = f.location_id
-       LEFT JOIN users u ON u.id = e.changed_by
-       ORDER BY e.created_at DESC, e.id DESC LIMIT 200`,
+      `SELECT display_number, location_name, event_type, from_status, to_status,
+              actor_username AS username, details, created_at
+       FROM audit_events
+       ORDER BY created_at DESC, id DESC LIMIT 200`,
     );
 
     const currentNum = getCurrentDisplayNumber();
@@ -178,7 +181,9 @@ export const adminRoutes = new Elysia()
     const itemId = parseItemId(id);
     if (!itemId) { set.status = 400; return { error: "不正な商品IDです" }; }
 
-    const usageCount = getOne<{ cnt: number }>(db, "SELECT COUNT(*) as cnt FROM order_items WHERE item_id = ?", itemId);
+    const usageCount = getOne<{ cnt: number }>(db, `SELECT
+      (SELECT COUNT(*) FROM order_items WHERE item_id = ?) +
+      (SELECT COUNT(*) FROM daily_item_usage WHERE item_id = ?) AS cnt`, itemId, itemId);
     if (usageCount && usageCount.cnt > 0) {
       runSql(db, "UPDATE items SET active = 0 WHERE id = ?", itemId);
       return redirectAdmin(addFlash, "success", "使用実績があるため、販売停止にしました", "items");
@@ -194,8 +199,8 @@ export const adminRoutes = new Elysia()
     const { username, password, staff_type, fulfillment_location_id } = (body ?? {}) as { username?: string; password?: string; staff_type?: string; fulfillment_location_id?: string };
 
     const trimmedUsername = typeof username === "string" ? username.trim() : "";
-    if (!trimmedUsername || trimmedUsername.length > MAX_USERNAME_LENGTH || typeof password !== "string" || password.length === 0 || password.length > 128) {
-      return redirectAdmin(addFlash, "error", "ユーザー名とパスワードを入力してください", "users");
+    if (!trimmedUsername || trimmedUsername.length > MAX_USERNAME_LENGTH || typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH || password.length > 128) {
+      return redirectAdmin(addFlash, "error", `パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください`, "users");
     }
 
     const type = staff_type === "provider" ? "provider" : "cashier";
@@ -215,6 +220,27 @@ export const adminRoutes = new Elysia()
     runSql(db, "INSERT INTO users (id, username, password_hash, role, staff_type, fulfillment_location_id) VALUES (?, ?, ?, 'staff', ?, ?)", id, trimmedUsername, passwordHash, type, locationId);
 
     return redirectAdmin(addFlash, "success", "スタッフを追加しました", "users");
+  })
+
+  .post("/api/admin/password", async ({ body, getUser, addFlash, cookie: { session_id } }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const { current_password, new_password } = (body ?? {}) as { current_password?: string; new_password?: string };
+    if (typeof current_password !== "string" || typeof new_password !== "string" || new_password.length < MIN_PASSWORD_LENGTH || new_password.length > 128) {
+      return redirectAdmin(addFlash, "error", `新しいパスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください`, "settings");
+    }
+    const db = getDb();
+    const account = getOne<{ password_hash: string }>(db, "SELECT password_hash FROM users WHERE id = ?", result.id);
+    if (!account || !await Bun.password.verify(current_password, account.password_hash)) {
+      return redirectAdmin(addFlash, "error", "現在のパスワードが正しくありません", "settings");
+    }
+    const passwordHash = await Bun.password.hash(new_password);
+    db.transaction(() => {
+      runSql(db, "UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, result.id);
+      if (session_id?.value) runSql(db, "DELETE FROM sessions WHERE user_id = ? AND id != ?", result.id, String(session_id.value));
+      else runSql(db, "DELETE FROM sessions WHERE user_id = ?", result.id);
+    })();
+    return redirectAdmin(addFlash, "success", "管理者パスワードを更新しました", "settings");
   })
 
   .post("/api/admin/users/:id/delete", async ({ params: { id }, getUser, addFlash }) => {
@@ -255,6 +281,25 @@ export const adminRoutes = new Elysia()
       runSql(db, "DELETE FROM sessions WHERE user_id = ?", id);
     })();
     return redirectAdmin(addFlash, "success", "スタッフ設定を更新しました。対象ユーザーは再ログインしてください", "users");
+  })
+
+  .post("/api/admin/users/:id/password", async ({ params: { id }, body, set, getUser, addFlash }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const { password } = (body ?? {}) as { password?: string };
+    if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH || password.length > 128) {
+      set.status = 400;
+      return { error: `パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください` };
+    }
+    const db = getDb();
+    const target = getOne<{ id: string; role: string }>(db, "SELECT id, role FROM users WHERE id = ?", id);
+    if (!target || target.role === "admin") { set.status = 400; return { error: "変更できないユーザーです" }; }
+    const passwordHash = await Bun.password.hash(password);
+    db.transaction(() => {
+      runSql(db, "UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, id);
+      runSql(db, "DELETE FROM sessions WHERE user_id = ?", id);
+    })();
+    return redirectAdmin(addFlash, "success", "パスワードを更新しました。対象ユーザーは再ログインしてください", "users");
   })
 
   .post("/api/admin/reset-numbers", async ({ set, getUser }) => {
@@ -312,6 +357,10 @@ export const adminRoutes = new Elysia()
     const db = getDb();
     const location = getOne<{ active: number }>(db, "SELECT active FROM fulfillment_locations WHERE id = ?", locationId);
     if (!location) { set.status = 404; return { error: "提供場所が見つかりません" }; }
+    if (location.active) {
+      const activeTasks = getOne<{ count: number }>(db, "SELECT COUNT(*) AS count FROM order_fulfillments WHERE location_id = ? AND status IN ('preparing', 'ready')", locationId)?.count ?? 0;
+      if (activeTasks > 0) return redirectAdmin(addFlash, "error", `進行中の提供タスクが${activeTasks}件あるため停止できません`, "locations");
+    }
     runSql(db, "UPDATE fulfillment_locations SET active = ?, updated_at = datetime('now') WHERE id = ?", location.active ? 0 : 1, locationId);
     wsManager.broadcastToMonitor(getMonitorBoard());
     return redirectAdmin(addFlash, "success", location.active ? "提供場所を停止しました" : "提供場所を再開しました", "locations");
@@ -328,7 +377,11 @@ export const adminRoutes = new Elysia()
     if (!itemId || !locationId || (maxPerOrder !== null && (!Number.isInteger(maxPerOrder) || maxPerOrder < 1)) || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1))) {
       set.status = 400; return { error: "不正な商品設定です" };
     }
-    runSql(getDb(), "UPDATE items SET fulfillment_location_id = ?, max_quantity_per_order = ?, daily_limit = ? WHERE id = ?", locationId, maxPerOrder, dailyLimit, itemId);
+    const db = getDb();
+    if (!getOne(db, "SELECT id FROM fulfillment_locations WHERE id = ? AND active = 1", locationId)) {
+      set.status = 400; return { error: "有効な提供場所を指定してください" };
+    }
+    runSql(db, "UPDATE items SET fulfillment_location_id = ?, max_quantity_per_order = ?, daily_limit = ? WHERE id = ?", locationId, maxPerOrder, dailyLimit, itemId);
     return redirectAdmin(addFlash, "success", "商品設定を更新しました", "items");
   })
 
@@ -343,35 +396,77 @@ export const adminRoutes = new Elysia()
     const dailyLimit = data.daily_order_limit ? Number(data.daily_order_limit) : null;
     const maxItems = Number(data.max_items_per_order);
     const maxQuantity = Number(data.max_total_quantity);
-    if ((openTime && !timePattern.test(openTime)) || (closeTime && !timePattern.test(closeTime)) || (openTime && closeTime && openTime >= closeTime) || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1)) || !Number.isInteger(maxItems) || maxItems < 1 || maxItems > 100 || !Number.isInteger(maxQuantity) || maxQuantity < 1 || maxQuantity > 10000) {
+    const retentionDays = Number(data.completed_order_retention_days);
+    if ((openTime && !timePattern.test(openTime)) || (closeTime && !timePattern.test(closeTime)) || (openTime && closeTime && openTime >= closeTime) || (dailyLimit !== null && (!Number.isInteger(dailyLimit) || dailyLimit < 1)) || !Number.isInteger(maxItems) || maxItems < 1 || maxItems > 100 || !Number.isInteger(maxQuantity) || maxQuantity < 1 || maxQuantity > 10000 || !Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) {
       set.status = 400; return { error: "不正な注文設定です" };
     }
-    runSql(getDb(), "UPDATE app_settings SET ordering_enabled = ?, order_open_time = ?, order_close_time = ?, daily_order_limit = ?, max_items_per_order = ?, max_total_quantity = ?, updated_at = datetime('now') WHERE id = 1", enabled, openTime, closeTime, dailyLimit, maxItems, maxQuantity);
+    runSql(getDb(), "UPDATE app_settings SET ordering_enabled = ?, order_open_time = ?, order_close_time = ?, daily_order_limit = ?, max_items_per_order = ?, max_total_quantity = ?, completed_order_retention_days = ?, updated_at = datetime('now') WHERE id = 1", enabled, openTime, closeTime, dailyLimit, maxItems, maxQuantity, retentionDays);
     return redirectAdmin(addFlash, "success", "注文設定を更新しました", "settings");
   })
 
-  .post("/api/admin/cleanup", async ({ getUser }) => {
+  .get("/api/admin/cleanup/preview", ({ getUser }) => {
     const result = requireAdmin(getUser());
     if (result instanceof Response) return result;
     const db = getDb();
+    const retentionDays = getOne<{ completed_order_retention_days: number }>(db, "SELECT completed_order_retention_days FROM app_settings WHERE id = 1")?.completed_order_retention_days ?? 7;
+    const cutoffModifier = `-${retentionDays} days`;
+    const target = getOne<{ count: number; oldest: string | null; newest: string | null }>(
+      db,
+      "SELECT COUNT(*) AS count, MIN(updated_at) AS oldest, MAX(updated_at) AS newest FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?)",
+      cutoffModifier,
+    );
+    return { retention_days: retentionDays, count: target?.count ?? 0, oldest: target?.oldest ?? null, newest: target?.newest ?? null };
+  })
+
+  .post("/api/admin/backup", async ({ getUser, set }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    try {
+      return { success: true, ...(await createDatabaseBackup()) };
+    } catch {
+      set.status = 503;
+      return { error: "バックアップを作成できませんでした" };
+    }
+  })
+
+  .post("/api/admin/cleanup", async ({ getUser, set }) => {
+    const result = requireAdmin(getUser());
+    if (result instanceof Response) return result;
+    const db = getDb();
+    const retentionDays = getOne<{ completed_order_retention_days: number }>(db, "SELECT completed_order_retention_days FROM app_settings WHERE id = 1")?.completed_order_retention_days ?? 7;
+    const cutoffModifier = `-${retentionDays} days`;
+    const pendingCount = getOne<{ count: number }>(db, "SELECT COUNT(*) AS count FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?)", cutoffModifier)?.count ?? 0;
+    if (pendingCount === 0) return { deleted: 0, retention_days: retentionDays, backup: null };
+    let backup;
+    try { backup = await createDatabaseBackup(db); }
+    catch { set.status = 503; return { error: "削除前バックアップを作成できなかったため、削除を中止しました" }; }
     const deleteOldOrders = db.transaction(() => {
+      const targetCount = getOne<{ count: number }>(db, "SELECT COUNT(*) AS count FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?)", cutoffModifier)?.count ?? 0;
+      if (targetCount === 0) return 0;
       runSql(
         db,
-        "DELETE FROM fulfillment_events WHERE fulfillment_id IN (SELECT id FROM order_fulfillments WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled')))"
+        "DELETE FROM fulfillment_events WHERE fulfillment_id IN (SELECT id FROM order_fulfillments WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?)))",
+        cutoffModifier,
       );
       runSql(
         db,
-        "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled'))"
+        "DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?))",
+        cutoffModifier,
       );
       runSql(
         db,
-        "DELETE FROM order_fulfillments WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled'))"
+        "DELETE FROM order_fulfillments WHERE order_id IN (SELECT id FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?))",
+        cutoffModifier,
       );
-      return runSql(
-        db,
-        "DELETE FROM orders WHERE status IN ('delivered', 'cancelled')"
-      ).changes;
+      const deleted = runSql(db, "DELETE FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?)", cutoffModifier).changes;
+      recordAuditEvent(db, {
+        eventType: "orders_cleaned",
+        actorUserId: result.id,
+        actorUsername: result.username,
+        details: { deleted, retentionDays },
+      });
+      return deleted;
     });
     const deleted = deleteOldOrders();
-    return { deleted };
+    return { deleted, retention_days: retentionDays, backup: backup.filename };
   });

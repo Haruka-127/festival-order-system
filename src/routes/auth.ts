@@ -1,13 +1,14 @@
 import { Elysia } from "elysia";
 import { getDb, getOne, runSql } from "../db/database";
 import { config } from "../config";
-import { loginPage } from "../views/components";
+import { accountPasswordPage, loginPage } from "../views/components";
 import { authMiddleware } from "../middleware/auth";
 import { LoginRateLimiter } from "../security";
 import { isIP } from "node:net";
 
 const loginIpLimiter = new LoginRateLimiter(50);
 const loginAccountLimiter = new LoginRateLimiter(10);
+const loginUsernameLimiter = new LoginRateLimiter(20);
 const DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=2,p=1$oYqXuWeZfV6iBuu8r7w8JmLbbzDuAtjPIataUBNhvjs$9Ep/Em/QRnNBTNTG9/5V7zD2u9vU2gYsM8S6X9mMJbU";
 
 function homeForRole(role: string): string {
@@ -58,7 +59,8 @@ export const authRoutes = new Elysia()
 
     const clientKey = getClientKey(request, server);
     const accountKey = `${clientKey}\0${username}`;
-    if (loginIpLimiter.isBlocked(clientKey) || loginAccountLimiter.isBlocked(accountKey)) {
+    const normalizedUsername = username.trim().toLocaleLowerCase("en-US");
+    if (loginIpLimiter.isBlocked(clientKey) || loginAccountLimiter.isBlocked(accountKey) || loginUsernameLimiter.isBlocked(normalizedUsername)) {
       set.status = 429;
       set.headers["Retry-After"] = "900";
       return new Response(loginPage("ログイン試行が多すぎます。しばらく待ってから再試行してください"), { status: 429, headers: { "Content-Type": "text/html; charset=utf-8", "Retry-After": "900" } });
@@ -75,10 +77,12 @@ export const authRoutes = new Elysia()
     if (!row || !valid) {
       loginIpLimiter.recordFailure(clientKey);
       loginAccountLimiter.recordFailure(accountKey);
+      loginUsernameLimiter.recordFailure(normalizedUsername);
       return new Response(loginPage("ユーザー名またはパスワードが正しくありません"), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
     loginAccountLimiter.clear(accountKey);
+    loginUsernameLimiter.clear(normalizedUsername);
 
     const sessionId = generateId();
     const expiresAt = toSqliteDateTime(new Date(Date.now() + config.sessionMaxAge));
@@ -104,6 +108,32 @@ export const authRoutes = new Elysia()
 
     set.status = 302;
     set.headers = { Location: homeForRole(row.role === "admin" ? "admin" : row.staff_type) };
+  })
+  .get("/account/password", ({ getUser }) => {
+    const user = getUser();
+    if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
+    return new Response(accountPasswordPage(homeForRole(user.role)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  })
+  .post("/account/password", async ({ body, getUser, cookie: { session_id } }) => {
+    const user = getUser();
+    if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
+    const { current_password, new_password } = (body ?? {}) as { current_password?: string; new_password?: string };
+    const home = homeForRole(user.role);
+    if (typeof current_password !== "string" || typeof new_password !== "string" || new_password.length < 10 || new_password.length > 128) {
+      return new Response(accountPasswordPage(home, "新しいパスワードは10文字以上で入力してください", true), { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+    const db = getDb();
+    const account = getOne<{ password_hash: string }>(db, "SELECT password_hash FROM users WHERE id = ?", user.id);
+    if (!account || !await Bun.password.verify(current_password, account.password_hash)) {
+      return new Response(accountPasswordPage(home, "現在のパスワードが正しくありません", true), { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+    const passwordHash = await Bun.password.hash(new_password);
+    db.transaction(() => {
+      runSql(db, "UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, user.id);
+      if (session_id?.value) runSql(db, "DELETE FROM sessions WHERE user_id = ? AND id != ?", user.id, String(session_id.value));
+      else runSql(db, "DELETE FROM sessions WHERE user_id = ?", user.id);
+    })();
+    return new Response(accountPasswordPage(home, "パスワードを変更しました"), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .post("/logout", ({ set, cookie: { session_id } }) => {
     const sid = session_id?.value;

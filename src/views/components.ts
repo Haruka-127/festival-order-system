@@ -91,3 +91,20 @@ export function notFoundPage(): string {
     </div>
   `);
 }
+
+export function accountPasswordPage(homePath: string, message = "", error = false): string {
+  return layout("パスワード変更", `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f3f4f6;padding:24px;">
+      <div class="card" style="width:100%;max-width:460px;">
+        <h1 class="text-2xl font-bold mb-4">パスワード変更</h1>
+        ${message ? `<div style="padding:10px;border:1px solid ${error ? "#fecaca" : "#bbf7d0"};color:${error ? "#991b1b" : "#166534"};margin-bottom:12px;">${message}</div>` : ""}
+        <form method="POST" action="/account/password" class="flex flex-col gap-4">
+          <input type="password" name="current_password" placeholder="現在のパスワード" required style="padding:12px;border:1px solid #d1d5db;">
+          <input type="password" name="new_password" minlength="10" maxlength="128" placeholder="新しいパスワード（10文字以上）" required style="padding:12px;border:1px solid #d1d5db;">
+          <button type="submit" class="btn btn-primary btn-lg btn-block">変更する</button>
+        </form>
+        <div class="mt-4 text-center"><a href="${homePath}">元の画面へ戻る</a></div>
+      </div>
+    </div>
+  `);
+}

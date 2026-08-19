@@ -44,6 +44,9 @@ export function validateRuntimeConfig(): void {
   catch { throw new Error("APP_TIME_ZONE must be a valid IANA time zone."); }
   const publicUrl = new URL(config.baseUrl);
   if (publicUrl.protocol !== "http:" && publicUrl.protocol !== "https:") throw new Error("BASE_URL must use http:// or https://.");
+  if (publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash || !["", "/"].includes(publicUrl.pathname)) {
+    throw new Error("BASE_URL must be an origin only, without credentials, a path, query, or fragment.");
+  }
 
   if (process.env.NODE_ENV !== "production") return;
   if (!config.cookieOptions.secure && process.env.ALLOW_INSECURE_HTTP !== "true") {

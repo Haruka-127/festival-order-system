@@ -1,12 +1,13 @@
 import { config } from "../config";
 import type { FlashMessage } from "../services/flash";
+import { formatDateTime } from "../services/time";
 
 type Item = { id: number; name: string; active: number; sold_out: number; sort_order: number; fulfillment_location_id?: number; location_name?: string; max_quantity_per_order?: number | null; daily_limit?: number | null };
 type OrderSummary = { id: string; display_number: number; status: string; created_at: string; items: string; token: string };
 type UserSummary = { id: string; username: string; role: string; staff_type?: string; fulfillment_location_id?: number | null; location_name?: string | null; created_at: string };
 type LocationSummary = { id: number; name: string; slug: string; active: number; sort_order: number; max_preparing_orders: number | null; max_preparing_units: number | null };
-type OrderSettings = { ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number };
-type EventSummary = { display_number: number; location_name: string; from_status: string | null; to_status: string; username: string | null; created_at: string };
+type OrderSettings = { ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number; completed_order_retention_days: number };
+type EventSummary = { display_number: number | null; location_name: string | null; event_type: string; from_status: string | null; to_status: string | null; username: string | null; details: string | null; created_at: string };
 
 export function adminPage(
   items: Item[],
@@ -15,7 +16,7 @@ export function adminPage(
   currentNum: { number: number; date: string } | null,
   securityNonce = "",
   locations: LocationSummary[] = [{ id: 1, name: "既定提供場所", slug: "default", active: 1, sort_order: 0, max_preparing_orders: null, max_preparing_units: null }],
-  settings: OrderSettings = { ordering_enabled: 1, order_open_time: null, order_close_time: null, daily_order_limit: null, max_items_per_order: 50, max_total_quantity: 500 },
+  settings: OrderSettings = { ordering_enabled: 1, order_open_time: null, order_close_time: null, daily_order_limit: null, max_items_per_order: 50, max_total_quantity: 500, completed_order_retention_days: 7 },
   events: EventSummary[] = [],
   flashMessages: FlashMessage[] = [],
 ): string {
@@ -216,7 +217,7 @@ export function adminPage(
                           <button type="submit" class="btn btn-sm btn-primary">商品名を更新</button>
                         </form>
                         <form method="POST" action="/api/admin/items/${item.id}/settings">
-                          <label>提供場所</label><select name="fulfillment_location_id" required>${locations.map(location => `<option value="${location.id}" ${item.fulfillment_location_id === location.id ? "selected" : ""}>${escapeHtml(location.name)}</option>`).join("")}</select>
+                          <label>提供場所</label><select name="fulfillment_location_id" required>${locations.filter(location => location.active || item.fulfillment_location_id === location.id).map(location => `<option value="${location.id}" ${item.fulfillment_location_id === location.id ? "selected" : ""}>${escapeHtml(location.name)}${location.active ? "" : "（停止中）"}</option>`).join("")}</select>
                           <label>1注文の数量上限</label><input type="number" min="1" name="max_quantity_per_order" value="${item.max_quantity_per_order ?? ""}" placeholder="未設定なら上限なし">
                           <label>1日の数量上限</label><input type="number" min="1" name="daily_limit" value="${item.daily_limit ?? ""}" placeholder="未設定なら上限なし">
                           <button type="submit" class="btn btn-sm btn-primary">提供設定を更新</button>
@@ -250,7 +251,7 @@ export function adminPage(
                 <td style="font-weight:700">${config.displayNumberPad(o.display_number)}</td>
                 <td style="font-size:13px">${escapeHtml(o.items)}</td>
                 <td><span class="badge ${statusColors[o.status] || "badge-gray"}">${escapeHtml(statusLabels[o.status] || o.status)}</span></td>
-                <td style="font-size:12px;color:#6b7280">${new Date(o.created_at).toLocaleString("ja-JP")}</td>
+                <td style="font-size:12px;color:#6b7280">${formatDateTime(o.created_at)}</td>
                 <td><a href="/order/${encodeURIComponent(o.token)}" target="_blank" rel="noopener noreferrer" style="font-size:12px">開く</a></td>
               </tr>
             `).join("")}
@@ -270,7 +271,7 @@ export function adminPage(
           <h3 style="font-size:15px;margin-bottom:8px">スタッフを追加</h3>
           <form method="POST" action="/api/admin/users" class="form-row">
             <div class="form-group"><input type="text" name="username" placeholder="ユーザー名" required></div>
-            <div class="form-group"><input type="password" name="password" placeholder="パスワード" required></div>
+            <div class="form-group"><input type="password" name="password" minlength="10" placeholder="パスワード（10文字以上）" required></div>
             <div class="form-group"><select name="staff_type"><option value="cashier">注文受付担当</option><option value="provider">提供担当</option></select></div>
             <div class="form-group"><select name="fulfillment_location_id"><option value="">提供担当の場合に選択</option>${locations.filter(location => location.active).map(location => `<option value="${location.id}">${escapeHtml(location.name)}</option>`).join("")}</select></div>
             <div><button type="submit" class="btn btn-primary">追加</button></div>
@@ -283,7 +284,7 @@ export function adminPage(
               <tr>
                 <td>${escapeHtml(u.username)}</td>
                 <td><span class="badge ${u.role === "admin" ? "badge-blue" : "badge-gray"}">${u.role === "admin" ? "管理者" : u.staff_type === "provider" ? "提供担当" : "注文受付担当"}</span>${u.location_name ? `<br><small>${escapeHtml(u.location_name)}</small>` : ""}</td>
-                <td style="font-size:12px;color:#6b7280">${new Date(u.created_at).toLocaleString("ja-JP")}</td>
+                <td style="font-size:12px;color:#6b7280">${formatDateTime(u.created_at)}</td>
                 <td>
                   ${u.role !== "admin" ? `<button type="button" class="btn btn-sm" data-open-dialog="user-editor-${escapeHtml(u.id)}">編集</button>
                   <dialog id="user-editor-${escapeHtml(u.id)}" class="editor-dialog">
@@ -293,6 +294,10 @@ export function adminPage(
                         <label>担当</label><select name="staff_type"><option value="cashier" ${u.staff_type !== "provider" ? "selected" : ""}>注文受付担当</option><option value="provider" ${u.staff_type === "provider" ? "selected" : ""}>提供担当</option></select>
                         <label>提供場所</label><select name="fulfillment_location_id"><option value="">提供担当の場合に選択</option>${locations.filter(location => location.active).map(location => `<option value="${location.id}" ${u.fulfillment_location_id === location.id ? "selected" : ""}>${escapeHtml(location.name)}</option>`).join("")}</select>
                         <button type="submit" class="btn btn-sm btn-primary">設定を更新</button>
+                      </form>
+                      <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/password">
+                        <label>新しいパスワード</label><input type="password" name="password" minlength="10" required placeholder="10文字以上">
+                        <button type="submit" class="btn btn-sm">パスワードをリセット</button>
                       </form>
                       <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/delete" data-confirm-delete-user><button type="submit" class="btn btn-sm btn-danger">スタッフを削除</button></form>
                       <div class="dialog-footer"><button type="button" class="btn btn-sm" data-close-dialog>閉じる</button></div>
@@ -347,14 +352,14 @@ export function adminPage(
     <!-- History Tab -->
     <div id="tab-history" class="section">
       <div class="card">
-        <h2>提供状態の操作履歴</h2>
+        <h2>注文・提供状態の操作履歴</h2>
         <table>
           <thead><tr><th>日時</th><th>受付番号</th><th>提供場所</th><th>変更</th><th>担当者</th></tr></thead>
           <tbody>${events.map(event => `<tr>
-            <td style="font-size:12px">${new Date(event.created_at).toLocaleString("ja-JP")}</td>
-            <td style="font-weight:700">${config.displayNumberPad(event.display_number)}</td>
-            <td>${escapeHtml(event.location_name)}</td>
-            <td>${escapeHtml(statusName(event.from_status))} → ${escapeHtml(statusName(event.to_status))}</td>
+            <td style="font-size:12px">${formatDateTime(event.created_at)}</td>
+            <td style="font-weight:700">${event.display_number == null ? "---" : config.displayNumberPad(event.display_number)}</td>
+            <td>${escapeHtml(event.location_name ?? "---")}</td>
+            <td>${escapeHtml(eventDescription(event))}</td>
             <td>${escapeHtml(event.username ?? "システム")}</td>
           </tr>`).join("")}</tbody>
         </table>
@@ -373,8 +378,18 @@ export function adminPage(
             <div class="form-group"><label>1日注文数上限</label><input type="number" min="1" name="daily_order_limit" value="${settings.daily_order_limit ?? ""}"></div>
             <div class="form-group"><label>1注文の商品種類上限</label><input type="number" min="1" max="100" name="max_items_per_order" value="${settings.max_items_per_order}" required></div>
             <div class="form-group"><label>1注文の合計数量上限</label><input type="number" min="1" max="10000" name="max_total_quantity" value="${settings.max_total_quantity}" required></div>
+            <div class="form-group"><label>完了注文の保持日数</label><input type="number" min="1" max="3650" name="completed_order_retention_days" value="${settings.completed_order_retention_days}" required></div>
           </div>
           <button type="submit" class="btn btn-primary">注文設定を更新</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>管理者パスワード</h2>
+        <form method="POST" action="/api/admin/password" class="form-row">
+          <div class="form-group"><label>現在のパスワード</label><input type="password" name="current_password" required></div>
+          <div class="form-group"><label>新しいパスワード</label><input type="password" name="new_password" minlength="10" required></div>
+          <div><button type="submit" class="btn btn-primary">パスワードを変更</button></div>
         </form>
       </div>
       <div class="card">
@@ -397,8 +412,9 @@ export function adminPage(
 
       <div class="card">
         <h2>データ管理</h2>
+        <button type="button" class="btn" data-action="backup">今すぐバックアップ</button>
         <button type="button" class="btn btn-danger" data-action="cleanup">古い注文を削除</button>
-        <span style="font-size:12px;color:#6b7280;margin-left:8px">受け渡し済み・キャンセルの注文データを削除します</span>
+        <span style="font-size:12px;color:#6b7280;margin-left:8px">${settings.completed_order_retention_days}日より古い受け渡し済み・キャンセル注文だけを削除します（監査履歴は保持）</span>
       </div>
     </div>
       </main>
@@ -464,8 +480,16 @@ export function adminPage(
       }
     }
 
-    function confirmCleanup() {
-      if (confirm('受け渡し済みおよびキャンセルの注文を削除しますか？\\nこの操作は元に戻せません。')) {
+    async function confirmCleanup() {
+      let preview;
+      try {
+        const response = await fetch('/api/admin/cleanup/preview');
+        if (response.status === 401) { location.href = '/login'; return; }
+        if (!response.ok) throw new Error('preview failed');
+        preview = await response.json();
+      } catch { showToast('削除対象を確認できませんでした', 'error'); return; }
+      if (!preview.count) { showToast('削除対象の注文はありません'); return; }
+      if (confirm(preview.retention_days + '日より古い注文 ' + preview.count + '件を削除しますか？\\n対象期間: ' + (preview.oldest || '---') + ' ～ ' + (preview.newest || '---') + '\\n監査履歴は保持されますが、注文の詳細と顧客画面は削除されます。')) {
         fetch('/api/admin/cleanup', { method: 'POST' })
           .then(async r => {
             const data = await r.json().catch(() => ({}));
@@ -478,6 +502,16 @@ export function adminPage(
           })
           .catch(() => showToast('エラーが発生しました'));
       }
+    }
+
+    async function createBackup() {
+      try {
+        const response = await fetch('/api/admin/backup', { method: 'POST' });
+        if (response.status === 401) { location.href = '/login'; return; }
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) { showToast(data.error || 'バックアップに失敗しました', 'error'); return; }
+        showToast('バックアップを作成しました: ' + data.filename);
+      } catch { showToast('バックアップに失敗しました', 'error'); }
     }
 
     document.addEventListener('click', event => {
@@ -494,6 +528,7 @@ export function adminPage(
       else if (button.dataset.action === 'show-add-user') toggleAddPanel('add-user-form', button);
       else if (button.dataset.action === 'reset-numbers') confirmReset();
       else if (button.dataset.action === 'cleanup') confirmCleanup();
+      else if (button.dataset.action === 'backup') createBackup();
       else if (button.dataset.deleteItemId) confirmDeleteItem(Number(button.dataset.deleteItemId), button.dataset.deleteItemName || '');
     });
 
@@ -519,4 +554,21 @@ function escapeHtml(s: string): string {
 function statusName(status: string | null): string {
   if (!status) return "新規";
   return { preparing: "準備中", ready: "提供可能", handed_over: "受渡済", cancelled: "キャンセル" }[status] ?? status;
+}
+
+function eventDescription(event: EventSummary): string {
+  if (event.event_type === "order_created") return "注文作成";
+  if (event.event_type === "order_cancelled") {
+    try {
+      const reason = event.details ? JSON.parse(event.details).reason : null;
+      return reason ? `注文キャンセル（${reason}）` : "注文キャンセル";
+    } catch { return "注文キャンセル"; }
+  }
+  if (event.event_type === "orders_cleaned") {
+    try {
+      const details = event.details ? JSON.parse(event.details) : null;
+      return details ? `完了注文を${details.deleted ?? 0}件削除` : "完了注文を削除";
+    } catch { return "完了注文を削除"; }
+  }
+  return `${statusName(event.from_status)} → ${statusName(event.to_status)}`;
 }
