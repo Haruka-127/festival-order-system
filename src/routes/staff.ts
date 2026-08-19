@@ -6,7 +6,8 @@ import { reserveDisplayNumber, todayDate } from "../services/numbering";
 import { getCustomerOrderByToken, getMonitorBoard } from "../services/fulfillment";
 import { wsManager } from "../services/websocket";
 import { getProviderTasks } from "./provider";
-import { staffPage, type CashierOrder } from "../views/staff";
+import { staffPage } from "../views/staff";
+import type { CashierOrder, FulfillmentStatus, OrderStatus } from "../contracts/view-models";
 import { recordAuditEvent } from "../services/audit";
 import { utcNowIso } from "../services/time";
 
@@ -57,12 +58,12 @@ function isWithinOrderingHours(openTime: string | null, closeTime: string | null
 
 export function getCashierOrders(): CashierOrder[] {
   const db = getDb();
-  const orders = getAll<{ id: string; display_number: number; display_number_date: string; status: string; created_at: string }>(
+  const orders = getAll<{ id: string; display_number: number; display_number_date: string; status: OrderStatus; created_at: string }>(
     db,
     `SELECT id, display_number, display_number_date, status, created_at FROM orders
      WHERE status IN ('preparing', 'available') ORDER BY created_at DESC`,
   );
-  const fulfillments = getAll<{ id: string; order_id: string; location_name: string; status: string }>(
+  const fulfillments = getAll<{ id: string; order_id: string; location_name: string; status: FulfillmentStatus }>(
     db,
     `SELECT f.id, f.order_id, l.name AS location_name, f.status
      FROM order_fulfillments f JOIN fulfillment_locations l ON l.id = f.location_id

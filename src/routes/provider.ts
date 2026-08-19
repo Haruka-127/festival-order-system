@@ -4,7 +4,8 @@ import { authMiddleware, type UserInfo } from "../middleware/auth";
 import { isValidWebSocketOrigin } from "../security";
 import { getCustomerOrderByToken, getMonitorBoard, recomputeOrderStatus } from "../services/fulfillment";
 import { wsManager } from "../services/websocket";
-import { providerPage, type ProviderTask } from "../views/provider";
+import { providerPage } from "../views/provider";
+import type { FulfillmentStatus, ProviderTask } from "../contracts/view-models";
 import { recordAuditEvent } from "../services/audit";
 import { utcNowIso } from "../services/time";
 
@@ -20,7 +21,7 @@ function requireProvider(user: UserInfo | null, api = false): UserInfo | Respons
 
 export function getProviderTasks(locationId: number): ProviderTask[] {
   const db = getDb();
-  const tasks = getAll<{ id: string; display_number: number; display_number_date: string; status: string; created_at: string; handed_over_at: string | null }>(
+  const tasks = getAll<{ id: string; display_number: number; display_number_date: string; status: FulfillmentStatus; created_at: string; handed_over_at: string | null }>(
     db,
     `SELECT f.id, o.display_number, o.display_number_date, f.status, f.created_at, f.handed_over_at
      FROM order_fulfillments f JOIN orders o ON o.id = f.order_id
