@@ -375,6 +375,9 @@ bun test
 # 型チェック・テスト・ビルドを一括実行
 bun run check
 
+# 注文受付から受け渡しまでのE2Eワークフロー
+bun run test:e2e
+
 # 特定のテストファイル
 bun test tests/auth.test.ts
 bun test tests/orders.test.ts
@@ -416,20 +419,24 @@ GitHub Actionsでも同じチェックを実行する。
 │   ├── routes/
 │   │   ├── auth.ts           # ログイン・ログアウト
 │   │   ├── staff.ts          # 店員画面・注文API
-│   │   ├── admin.ts          # 管理画面・管理API
+│   │   ├── admin.ts          # 管理ルートの構成
+│   │   ├── admin/            # 管理画面・管理APIの機能別ルート
 │   │   ├── monitor.ts        # モニター画面
 │   │   └── customer.ts       # 利用客画面・注文状態API
 │   ├── styles/               # 画面別CSS
 │   └── views/
 │       ├── layout.tsx        # 型付き共通HTML文書
 │       ├── components.tsx    # ログイン・エラーページ
+│       ├── admin.tsx         # 管理画面の共通レイアウト
+│       ├── admin/            # 管理画面の機能別ビュー
 │       └── *.tsx             # サーバー描画する各画面
 ├── tests/
 │   ├── setup.ts              # テスト用DBセットアップ
 │   ├── auth.test.ts          # 認証テスト
 │   ├── orders.test.ts        # 注文テスト
 │   ├── numbering.test.ts     # 採番テスト
-│   └── views.test.ts         # 画面HTML/スクリプト構文テスト
+│   ├── views.test.ts         # 画面HTML/スクリプト構文テスト
+│   └── workflow.e2e.test.ts  # 注文から受け渡しまでのHTTP E2Eテスト
 ├── data/                     # SQLiteデータ保存先
 ├── package.json
 ├── tsconfig.json

@@ -15,6 +15,7 @@
     "build": "bun run build:server && bun run build:assets",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "test:e2e": "bun test tests/workflow.e2e.test.ts",
     "check": "bun run typecheck && bun run build && bun test"
   },
   "dependencies": {
