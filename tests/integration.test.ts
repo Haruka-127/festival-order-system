@@ -45,6 +45,27 @@ test("unauthenticated API requests return JSON 401 instead of redirecting", asyn
   expect(await response.json()).toEqual({ error: "authentication_required" });
 });
 
+test("admin sections have stable paths", async () => {
+  const root = await app.handle(request("/admin", "GET", undefined, "integration-admin"));
+  expect(root.status).toBe(302);
+  expect(root.headers.get("location")).toBe("/admin/items");
+
+  for (const path of ["/admin/items", "/admin/orders", "/admin/users", "/admin/settings", "/admin/settings/locations", "/admin/settings/history", "/admin/settings/advanced"]) {
+    const response = await app.handle(request(path, "GET", undefined, "integration-admin"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+  }
+});
+
+test("advanced admin forms return to the advanced settings path", async () => {
+  const response = await app.handle(request("/api/admin/password", "POST", {
+    current_password: "",
+    new_password: "short",
+  }, "integration-admin"));
+  expect(response.status).toBe(303);
+  expect(response.headers.get("location")).toBe("/admin/settings/advanced");
+});
+
 test("reusing an order request id returns the original order without double reservation", async () => {
   const payload = { items: [{ item_id: 1, quantity: 2 }], client_request_id: "integration-request-0001" };
   const first = await app.handle(request("/api/staff/orders", "POST", payload, "integration-cashier"));
@@ -93,6 +114,7 @@ test("a location with pending work cannot be stopped from the admin API", async 
   const db = getDb();
   const response = await app.handle(request("/api/admin/locations/201/toggle-active", "POST", {}, "integration-admin"));
   expect(response.status).toBe(303);
+  expect(response.headers.get("location")).toBe("/admin/settings/locations");
   expect(getOne<{ active: number }>(db, "SELECT active FROM fulfillment_locations WHERE id = 201")?.active).toBe(1);
 });
 

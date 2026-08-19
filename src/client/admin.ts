@@ -1,22 +1,9 @@
 // Browser entry point extracted from the server-rendered page.
 export {};
-type FlashMessage = { message: string; kind: "success" | "error"; targetTab?: string | null };
+type FlashMessage = { message: string; kind: "success" | "error" };
 type CleanupPreview = { count: number; retention_days: number; oldest?: string | null; newest?: string | null };
 
-function showTab(name: string): void {
-      const targetSection = document.getElementById('tab-' + name);
-      if (!targetSection) return;
-      const mainTabName = targetSection.dataset.parentTab || name;
-      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      document.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
-      targetSection.classList.add('active');
-      const activeTab = document.querySelector('.tab[data-tab="' + mainTabName + '"]');
-      activeTab?.classList.add('active');
-      activeTab?.setAttribute('aria-selected', 'true');
-      document.querySelector('.content-area')?.scrollIntoView({ block: 'start' });
-    }
-
-    function filterOrders(filter: string): void {
+function filterOrders(filter: string): void {
       const activeStatuses = ['preparing', 'available'];
       const completedStatuses = ['delivered', 'cancelled'];
       let visibleCount = 0;
@@ -122,8 +109,7 @@ function showTab(name: string): void {
       }
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null;
       if (!button) return;
-      if (button.dataset.tab) showTab(button.dataset.tab);
-      else if (button.dataset.orderFilter) filterOrders(button.dataset.orderFilter);
+      if (button.dataset.orderFilter) filterOrders(button.dataset.orderFilter);
       else if (button.dataset.openDialog) (document.getElementById(button.dataset.openDialog) as HTMLDialogElement | null)?.showModal();
       else if (button.hasAttribute('data-close-dialog')) button.closest('dialog')?.close();
       else if (button.dataset.action === 'show-add-item') toggleAddPanel('add-item-form', button);
@@ -139,8 +125,6 @@ function showTab(name: string): void {
     });
 
     const flashMessages = JSON.parse(document.body.dataset.flashMessages || '[]') as FlashMessage[];
-    const targetFlash = [...flashMessages].reverse().find(flash => flash.targetTab);
-    if (targetFlash?.targetTab) showTab(targetFlash.targetTab);
     flashMessages.forEach((flash, index) => {
       setTimeout(() => showToast(flash.message, flash.kind), index * 3200);
     });

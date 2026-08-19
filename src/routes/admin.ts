@@ -3,11 +3,12 @@ import { getAll, getDb, getOne, runSql } from "../db/database";
 import { authMiddleware } from "../middleware/auth";
 import type { UserInfo } from "../middleware/auth";
 import { adminPage } from "../views/admin";
+import type { AdminSection } from "../views/admin";
 import { getCurrentDisplayNumber, resetDisplayNumbersForToday } from "../services/numbering";
 import { wsManager } from "../services/websocket";
 import { isPositiveInteger } from "../security";
 import { getMonitorBoard } from "../services/fulfillment";
-import type { FlashKind, FlashTargetTab } from "../services/flash";
+import type { FlashKind, FlashMessage, FlashTargetTab } from "../services/flash";
 import { recordAuditEvent } from "../services/audit";
 import { createDatabaseBackup } from "../services/backup";
 
@@ -15,10 +16,20 @@ const MAX_NAME_LENGTH = 100;
 const MAX_USERNAME_LENGTH = 64;
 const MIN_PASSWORD_LENGTH = 10;
 type AddFlash = (kind: FlashKind, message: string, targetTab?: FlashTargetTab | null) => void;
+type AdminPageContext = { getUser: () => UserInfo | null; consumeFlash: () => FlashMessage[]; securityNonce?: string };
 
-function redirectAdmin(addFlash?: AddFlash, kind?: FlashKind, message?: string, targetTab?: FlashTargetTab): Response {
+const adminPaths: Record<FlashTargetTab, string> = {
+  items: "/admin/items",
+  orders: "/admin/orders",
+  users: "/admin/users",
+  settings: "/admin/settings",
+  locations: "/admin/settings/locations",
+  history: "/admin/settings/history",
+};
+
+function redirectAdmin(addFlash?: AddFlash, kind?: FlashKind, message?: string, targetTab?: FlashTargetTab, redirectPath?: string): Response {
   if (addFlash && kind && message) addFlash(kind, message, targetTab ?? null);
-  return new Response(null, { status: 303, headers: { Location: "/admin" } });
+  return new Response(null, { status: 303, headers: { Location: redirectPath ?? adminPaths[targetTab ?? "items"] } });
 }
 
 function parseItemId(value: string): number | null {
@@ -41,11 +52,9 @@ function requireAdmin(user: UserInfo | null, api = true): UserInfo | Response {
   return user;
 }
 
-export const adminRoutes = new Elysia()
-  .use(authMiddleware)
-  .get("/admin", (context) => {
+function renderAdminPage(context: AdminPageContext, activeSection: AdminSection): Response {
     const { getUser, consumeFlash } = context;
-    const { securityNonce } = context as typeof context & { securityNonce: string };
+    const securityNonce = context.securityNonce ?? "";
     const result = requireAdmin(getUser(), false);
     if (result instanceof Response) return result;
     const db = getDb();
@@ -98,10 +107,21 @@ export const adminRoutes = new Elysia()
     const currentNum = getCurrentDisplayNumber();
     const flashMessages = consumeFlash();
 
-    return new Response(adminPage(items, orders, users, currentNum, securityNonce, locations, settings, events, flashMessages), {
+    return new Response(adminPage(items, orders, users, currentNum, securityNonce, locations, settings, events, flashMessages, activeSection), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
-  })
+}
+
+export const adminRoutes = new Elysia()
+  .use(authMiddleware)
+  .get("/admin", () => new Response(null, { status: 302, headers: { Location: "/admin/items" } }))
+  .get("/admin/items", context => renderAdminPage(context as AdminPageContext, "items"))
+  .get("/admin/orders", context => renderAdminPage(context as AdminPageContext, "orders"))
+  .get("/admin/users", context => renderAdminPage(context as AdminPageContext, "users"))
+  .get("/admin/settings", context => renderAdminPage(context as AdminPageContext, "settings"))
+  .get("/admin/settings/locations", context => renderAdminPage(context as AdminPageContext, "locations"))
+  .get("/admin/settings/history", context => renderAdminPage(context as AdminPageContext, "history"))
+  .get("/admin/settings/advanced", context => renderAdminPage(context as AdminPageContext, "advanced"))
 
   .post("/api/admin/items", async ({ body, getUser, addFlash }) => {
     const result = requireAdmin(getUser());
@@ -227,12 +247,12 @@ export const adminRoutes = new Elysia()
     if (result instanceof Response) return result;
     const { current_password, new_password } = (body ?? {}) as { current_password?: string; new_password?: string };
     if (typeof current_password !== "string" || typeof new_password !== "string" || new_password.length < MIN_PASSWORD_LENGTH || new_password.length > 128) {
-      return redirectAdmin(addFlash, "error", `新しいパスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください`, "settings");
+      return redirectAdmin(addFlash, "error", `新しいパスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください`, "settings", "/admin/settings/advanced");
     }
     const db = getDb();
     const account = getOne<{ password_hash: string }>(db, "SELECT password_hash FROM users WHERE id = ?", result.id);
     if (!account || !await Bun.password.verify(current_password, account.password_hash)) {
-      return redirectAdmin(addFlash, "error", "現在のパスワードが正しくありません", "settings");
+      return redirectAdmin(addFlash, "error", "現在のパスワードが正しくありません", "settings", "/admin/settings/advanced");
     }
     const passwordHash = await Bun.password.hash(new_password);
     db.transaction(() => {
@@ -240,7 +260,7 @@ export const adminRoutes = new Elysia()
       if (session_id?.value) runSql(db, "DELETE FROM sessions WHERE user_id = ? AND id != ?", result.id, String(session_id.value));
       else runSql(db, "DELETE FROM sessions WHERE user_id = ?", result.id);
     })();
-    return redirectAdmin(addFlash, "success", "管理者パスワードを更新しました", "settings");
+    return redirectAdmin(addFlash, "success", "管理者パスワードを更新しました", "settings", "/admin/settings/advanced");
   })
 
   .post("/api/admin/users/:id/delete", async ({ params: { id }, getUser, addFlash }) => {
@@ -401,7 +421,7 @@ export const adminRoutes = new Elysia()
       set.status = 400; return { error: "不正な注文設定です" };
     }
     runSql(getDb(), "UPDATE app_settings SET ordering_enabled = ?, order_open_time = ?, order_close_time = ?, daily_order_limit = ?, max_items_per_order = ?, max_total_quantity = ?, completed_order_retention_days = ?, updated_at = datetime('now') WHERE id = 1", enabled, openTime, closeTime, dailyLimit, maxItems, maxQuantity, retentionDays);
-    return redirectAdmin(addFlash, "success", "注文設定を更新しました", "settings");
+    return redirectAdmin(addFlash, "success", "注文設定を更新しました", "settings", data.return_to === "advanced" ? "/admin/settings/advanced" : undefined);
   })
 
   .get("/api/admin/cleanup/preview", ({ getUser }) => {

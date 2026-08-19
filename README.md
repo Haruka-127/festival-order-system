@@ -77,7 +77,7 @@ Dockerイメージはビルドステージで `dist/index.js` にバンドルし
 | ログイン | `http://localhost:3000/login` | なし |
 | 注文受付画面 | `http://localhost:3000/staff` | 注文受付担当・管理者 |
 | 提供担当画面 | `http://localhost:3000/provider` | 提供担当 |
-| 管理画面 | `http://localhost:3000/admin` | 管理者のみ |
+| 管理画面（商品） | `http://localhost:3000/admin/items` | 管理者のみ |
 | モニター画面 | `http://localhost:3000/monitor` | なし |
 | 利用客画面 | `http://localhost:3000/order/:token` | なし（トークン認証） |
 
@@ -175,7 +175,19 @@ bun run src/index.ts
 - 通信結果が不明な場合も同一リクエストIDで再送し、二重注文を防止
 - キャンセル時は確認と理由入力が必要。受渡済み商品を含む注文全体はキャンセル不可
 
-### 管理画面 (`/admin`)
+### 管理画面 (`/admin/*`)
+
+| 画面 | パス |
+|------|------|
+| 商品 | `/admin/items` |
+| 注文 | `/admin/orders` |
+| スタッフ | `/admin/users` |
+| 設定 | `/admin/settings` |
+| 提供場所 | `/admin/settings/locations` |
+| 操作履歴 | `/admin/settings/history` |
+| 詳細設定・データ管理 | `/admin/settings/advanced` |
+
+`/admin` へのアクセスは `/admin/items` へ転送されます。
 
 - 提供場所管理: 追加、停止、表示順、準備中注文数・商品数上限
 - 商品管理: 提供場所割り当て、注文上限、追加、名前変更、表示順変更、販売停止、売り切れ設定、削除

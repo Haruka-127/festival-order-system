@@ -45,12 +45,13 @@ describe("server-rendered views", () => {
       { number: 1, date: "2026-06-25" },
     );
     expectExternalAssets(html, "admin");
-    expect(html).toContain('role="tablist"');
-    expect(html.match(/class="tab(?: active)?" data-tab=/g)).toHaveLength(4);
+    expect(html).toContain('<nav class="tabs" aria-label="管理メニュー">');
+    expect(html.match(/class="tab(?: active)?" href="\/admin\//g)).toHaveLength(4);
+    expect(html).toContain('class="tab active" href="/admin/items"');
     expect(html).toContain('data-order-filter="active"');
     expect(html).toContain('data-order-status="preparing"');
-    expect(html).toContain('id="tab-locations" class="section" data-parent-tab="settings"');
-    expect(html).toContain('id="tab-advanced" class="section" data-parent-tab="settings"');
+    expect(html).toContain('href="/admin/settings/locations"');
+    expect(html).toContain('href="/admin/settings/advanced"');
     expect(html).toContain('data-open-dialog="item-editor-1"');
     expect(html).toContain('id="user-editor-staff-id" class="editor-dialog"');
     expect(html).toContain('id="location-editor-1" class="editor-dialog"');
@@ -58,10 +59,21 @@ describe("server-rendered views", () => {
     expect(client).toContain("showModal()");
     expect(client).toContain("const shouldOpen = panel.hidden");
     expect(client).toContain("function filterOrders(filter: string)");
-    expect(client).toContain("targetSection.dataset.parentTab || name");
+    expect(client).not.toContain("function showTab");
     const css = await source("../src/styles/admin.css");
     expect(css).toContain("--green:#166534");
     expect(css).toContain(".dialog-close{width:38px;height:38px");
+  });
+
+  test("admin sections render as addressable pages", () => {
+    const orders = adminPage([], [], [], null, "", undefined, undefined, undefined, [], "orders");
+    expect(orders).toContain('class="tab active" href="/admin/orders"');
+    expect(orders).toContain('id="tab-orders" class="section active"');
+
+    const advanced = adminPage([], [], [], null, "", undefined, undefined, undefined, [], "advanced");
+    expect(advanced).toContain('class="tab active" href="/admin/settings"');
+    expect(advanced).toContain('id="tab-advanced" class="section active"');
+    expect(advanced).toContain('href="/admin/settings"');
   });
 
   test("admin flash messages are passed as escaped body data", () => {

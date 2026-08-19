@@ -9,6 +9,7 @@ type UserSummary = { id: string; username: string; role: string; staff_type?: st
 type LocationSummary = { id: number; name: string; slug: string; active: number; sort_order: number; max_preparing_orders: number | null; max_preparing_units: number | null };
 type OrderSettings = { ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number; completed_order_retention_days: number };
 type EventSummary = { display_number: number | null; location_name: string | null; event_type: string; from_status: string | null; to_status: string | null; username: string | null; details: string | null; created_at: string };
+export type AdminSection = "items" | "orders" | "users" | "settings" | "locations" | "history" | "advanced";
 
 export function adminPage(
   items: Item[],
@@ -20,10 +21,14 @@ export function adminPage(
   settings: OrderSettings = { ordering_enabled: 1, order_open_time: null, order_close_time: null, daily_order_limit: null, max_items_per_order: 50, max_total_quantity: 500, completed_order_retention_days: 7 },
   events: EventSummary[] = [],
   flashMessages: FlashMessage[] = [],
+  activeSection: AdminSection = "items",
 ): string {
   const statusLabels: Record<string, string> = { preparing: "準備中", available: "提供可能", delivered: "受渡済", cancelled: "キャンセル" };
   const statusColors: Record<string, string> = { preparing: "badge-blue", available: "badge-green", delivered: "badge-gray", cancelled: "badge-red" };
   const serializedFlashMessages = JSON.stringify(flashMessages).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+  const activeMainSection = ["locations", "history", "advanced"].includes(activeSection) ? "settings" : activeSection;
+  const sectionClass = (section: AdminSection) => `section${activeSection === section ? " active" : ""}`;
+  const tabClass = (section: AdminSection) => `tab${activeMainSection === section ? " active" : ""}`;
 
 return pageDocument({
     title: "管理画面 - 文化祭飲食システム",
@@ -52,16 +57,16 @@ return pageDocument({
     </section>
 
     <div class="workspace">
-      <div class="tabs" role="tablist" aria-label="管理メニュー">
-        <button class="tab active" data-tab="items" role="tab" aria-selected="true" aria-controls="tab-items">商品</button>
-        <button class="tab" data-tab="orders" role="tab" aria-selected="false" aria-controls="tab-orders">注文</button>
-        <button class="tab" data-tab="users" role="tab" aria-selected="false" aria-controls="tab-users">スタッフ</button>
-        <button class="tab" data-tab="settings" role="tab" aria-selected="false" aria-controls="tab-settings">設定</button>
-      </div>
+      <nav class="tabs" aria-label="管理メニュー">
+        <a class="${tabClass("items")}" href="/admin/items" ${activeMainSection === "items" ? 'aria-current="page"' : ""}>商品</a>
+        <a class="${tabClass("orders")}" href="/admin/orders" ${activeMainSection === "orders" ? 'aria-current="page"' : ""}>注文</a>
+        <a class="${tabClass("users")}" href="/admin/users" ${activeMainSection === "users" ? 'aria-current="page"' : ""}>スタッフ</a>
+        <a class="${tabClass("settings")}" href="/admin/settings" ${activeMainSection === "settings" ? 'aria-current="page"' : ""}>設定</a>
+      </nav>
       <main class="content-area">
 
     <!-- Items Tab -->
-    <div id="tab-items" class="section active">
+    <div id="tab-items" class="${sectionClass("items")}">
       <div class="card">
         <div class="section-tools">
           <h2>商品</h2>
@@ -135,7 +140,7 @@ return pageDocument({
     </div>
 
     <!-- Orders Tab -->
-    <div id="tab-orders" class="section">
+    <div id="tab-orders" class="${sectionClass("orders")}">
       <div class="card">
         <div class="section-tools section-tools-wrap">
           <div><h2>注文</h2><p class="section-description">最近の注文を確認できます</p></div>
@@ -166,7 +171,7 @@ return pageDocument({
     </div>
 
     <!-- Users Tab -->
-    <div id="tab-users" class="section">
+    <div id="tab-users" class="${sectionClass("users")}">
       <div class="card">
         <div class="section-tools">
           <h2>スタッフ</h2>
@@ -218,9 +223,9 @@ return pageDocument({
     </div>
 
     <!-- Secondary settings: Locations -->
-    <div id="tab-locations" class="section" data-parent-tab="settings">
+    <div id="tab-locations" class="${sectionClass("locations")}">
       <div class="subpage-heading">
-        <button type="button" class="back-button" data-tab="settings">← 設定へ戻る</button>
+        <a class="back-button" href="/admin/settings">← 設定へ戻る</a>
         <h2>提供場所の設定</h2>
       </div>
       <div class="card">
@@ -260,9 +265,9 @@ return pageDocument({
     </div>
 
     <!-- Secondary settings: History -->
-    <div id="tab-history" class="section" data-parent-tab="settings">
+    <div id="tab-history" class="${sectionClass("history")}">
       <div class="subpage-heading">
-        <button type="button" class="back-button" data-tab="settings">← 設定へ戻る</button>
+        <a class="back-button" href="/admin/settings">← 設定へ戻る</a>
         <h2>操作履歴</h2>
       </div>
       <div class="card">
@@ -281,7 +286,7 @@ return pageDocument({
     </div>
 
     <!-- Settings Tab -->
-    <div id="tab-settings" class="section">
+    <div id="tab-settings" class="${sectionClass("settings")}">
       <div class="page-heading"><h2>設定</h2><p>営業中によく変更する項目だけを表示しています</p></div>
       <div class="card settings-card">
         <h3>注文受付</h3>
@@ -306,21 +311,22 @@ return pageDocument({
       </div>
 
       <div class="settings-links" aria-label="その他の設定">
-        <button type="button" class="settings-link" data-tab="locations"><span><strong>提供場所の設定</strong><small>${locations.length}か所の提供場所を管理</small></span><span aria-hidden="true">›</span></button>
-        <button type="button" class="settings-link" data-tab="history"><span><strong>操作履歴</strong><small>注文や提供状態の変更を確認</small></span><span aria-hidden="true">›</span></button>
-        <button type="button" class="settings-link" data-tab="advanced"><span><strong>詳細設定・データ管理</strong><small>注文上限、番号、バックアップなど</small></span><span aria-hidden="true">›</span></button>
+        <a class="settings-link" href="/admin/settings/locations"><span><strong>提供場所の設定</strong><small>${locations.length}か所の提供場所を管理</small></span><span aria-hidden="true">›</span></a>
+        <a class="settings-link" href="/admin/settings/history"><span><strong>操作履歴</strong><small>注文や提供状態の変更を確認</small></span><span aria-hidden="true">›</span></a>
+        <a class="settings-link" href="/admin/settings/advanced"><span><strong>詳細設定・データ管理</strong><small>注文上限、番号、バックアップなど</small></span><span aria-hidden="true">›</span></a>
       </div>
     </div>
 
     <!-- Secondary settings: Advanced -->
-    <div id="tab-advanced" class="section" data-parent-tab="settings">
+    <div id="tab-advanced" class="${sectionClass("advanced")}">
       <div class="subpage-heading">
-        <button type="button" class="back-button" data-tab="settings">← 設定へ戻る</button>
+        <a class="back-button" href="/admin/settings">← 設定へ戻る</a>
         <h2>詳細設定・データ管理</h2>
       </div>
       <div class="card compact-card">
         <h3>注文上限とデータ保持</h3>
         <form method="POST" action="/api/admin/settings/orders">
+          <input type="hidden" name="return_to" value="advanced">
           <input type="hidden" name="ordering_enabled" value="${settings.ordering_enabled ? "1" : "0"}">
           <input type="hidden" name="order_open_time" value="${settings.order_open_time ?? ""}">
           <input type="hidden" name="order_close_time" value="${settings.order_close_time ?? ""}">
