@@ -9,7 +9,9 @@
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "build": "bun build src/index.ts --target=bun --outdir ./dist",
-    "test": "bun test"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test && bun run build"
   },
   "dependencies": {
     "elysia": "^1.4.29",

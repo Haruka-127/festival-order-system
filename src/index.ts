@@ -1,91 +1,10 @@
-import { Elysia } from "elysia";
 import { config, validateRuntimeConfig } from "./config";
 import { getDb, closeDb, getOne, runSql } from "./db/database";
-import { wsManager } from "./services/websocket";
-import { authRoutes } from "./routes/auth";
-import { staffRoutes } from "./routes/staff";
-import { adminRoutes } from "./routes/admin";
-import { monitorRoutes } from "./routes/monitor";
-import { customerRoutes } from "./routes/customer";
-import { providerRoutes } from "./routes/provider";
-import { notFoundPage } from "./views/components";
-import { applySecurityHeaders, isValidSameOriginRequest, isValidWebSocketOrigin } from "./security";
-import { getCustomerOrderByToken, getMonitorBoard } from "./services/fulfillment";
+import { createApp } from "./app";
 
 validateRuntimeConfig();
 
-const app = new Elysia({ serve: { maxRequestBodySize: 64 * 1024 } })
-  .derive({ as: "global" }, () => ({ securityNonce: crypto.randomUUID().replaceAll("-", "") }))
-  .onRequest(({ request }) => {
-    const reject = (message: string, status: number) => {
-      const headers: Record<string, string | number> = {};
-      applySecurityHeaders(headers, new URL(request.url).pathname);
-      return new Response(message, { status, headers: headers as HeadersInit });
-    };
-    if (request.headers.has("transfer-encoding")) return reject("Chunked request bodies are not accepted", 411);
-    const contentLengthHeader = request.headers.get("content-length");
-    if (contentLengthHeader && (!/^\d+$/.test(contentLengthHeader) || Number(contentLengthHeader) > 64 * 1024)) {
-      return reject("Request body too large", 413);
-    }
-    if (!isValidSameOriginRequest(request)) return reject("Invalid request origin", 403);
-  })
-  .onAfterHandle(({ request, set, securityNonce }) => {
-    applySecurityHeaders(set.headers as Record<string, string | number>, new URL(request.url).pathname, securityNonce);
-  })
-  .get("/", () => new Response(null, { status: 302, headers: { Location: "/login" } }))
-  .use(authRoutes)
-  .use(staffRoutes)
-  .use(providerRoutes)
-  .use(adminRoutes)
-  .use(monitorRoutes)
-  .use(customerRoutes)
-  .ws("/ws/monitor", {
-    beforeHandle({ request, set }) {
-      if (!isValidWebSocketOrigin(request)) { set.status = 403; return "Invalid WebSocket origin"; }
-    },
-    open(ws) {
-      wsManager.addMonitor(ws as any);
-      ws.send(JSON.stringify({ type: "monitor_update", ...getMonitorBoard() }));
-    },
-    close(ws) {
-      wsManager.remove(ws as any);
-    },
-  })
-  .ws("/ws/order/:token", {
-    beforeHandle({ request, params, set }) {
-      if (!isValidWebSocketOrigin(request) || !/^[a-f0-9]{64}$/.test(params.token)) {
-        set.status = 403;
-        return "Invalid WebSocket request";
-      }
-      if (!getOne<{ id: string }>(getDb(), "SELECT id FROM orders WHERE token = ?", params.token)) {
-        set.status = 404;
-        return "Order not found";
-      }
-    },
-    open(ws) {
-      const token = ws.data.params?.token;
-      if (token) {
-        wsManager.addOrderClient(token, ws as any);
-        const order = getCustomerOrderByToken(token);
-        if (order) {
-          ws.send(JSON.stringify({ type: "order_update", ...order }));
-        }
-      }
-    },
-    close(ws) {
-      wsManager.remove(ws as any);
-    },
-  })
-  .onError(({ code }) => {
-    if (code === "NOT_FOUND") {
-      return new Response(notFoundPage(), {
-        status: 404,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    }
-    console.error(`[ERROR] code=${code}`);
-    return new Response("サーバーエラーが発生しました", { status: 500 });
-  });
+const app = createApp();
 
 async function seedInitialData() {
   const db = getDb();
@@ -114,17 +33,18 @@ app.listen({
   hostname: config.host,
 });
 
-process.on("SIGINT", () => {
-  console.log("\n[SHUTDOWN] Closing database...");
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(JSON.stringify({ level: "info", event: "shutdown", signal }));
+  try { await app.stop(); } catch {}
   closeDb();
   process.exit(0);
-});
+}
 
-process.on("SIGTERM", () => {
-  console.log("\n[SHUTDOWN] Closing database...");
-  closeDb();
-  process.exit(0);
-});
+process.once("SIGINT", () => { void shutdown("SIGINT"); });
+process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
 
 console.log(`🚀 Server running at http://${config.host}:${config.port}`);
 if (process.env.NODE_ENV === "production") {

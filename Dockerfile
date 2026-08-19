@@ -19,13 +19,15 @@ ENV NODE_ENV=production \
     DATA_DIR=/app/data
 
 COPY --from=build --chown=bun:bun /app/dist ./dist
-RUN apk upgrade --no-cache \
-    && mkdir -p /app/data \
+RUN mkdir -p /app/data \
     && chown -R bun:bun /app/data
 
 USER bun
 
 EXPOSE 3000
 VOLUME ["/app/data"]
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["bun", "-e", "const r=await fetch('http://127.0.0.1:3000/health/ready');if(!r.ok)process.exit(1)"]
 
 CMD ["bun", "dist/index.js"]
