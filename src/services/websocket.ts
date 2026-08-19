@@ -2,7 +2,7 @@ import type { ServerWebSocket } from "bun";
 
 type WsData = { type: string };
 
-class WebSocketManager {
+export class WebSocketManager {
   private monitorClients = new Set<ServerWebSocket<WsData>>();
   private orderClients = new Map<string, Set<ServerWebSocket<WsData>>>();
   private providerClients = new Map<number, Set<ServerWebSocket<WsData>>>();
@@ -38,36 +38,43 @@ class WebSocketManager {
     }
   }
 
+  private send(clients: Iterable<ServerWebSocket<WsData>>, message: string, channel: "monitor" | "order" | "provider"): void {
+    for (const ws of clients) {
+      if (ws.readyState >= 2) {
+        this.remove(ws);
+        continue;
+      }
+      if (ws.readyState !== 1) continue;
+      try {
+        ws.send(message);
+      } catch (error) {
+        this.remove(ws);
+        console.warn(JSON.stringify({
+          level: "warn",
+          event: "websocket_send_failed",
+          channel,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+      }
+    }
+  }
+
   broadcastToMonitor(data: object) {
     const msg = JSON.stringify({ type: "monitor_update", ...data });
-    for (const ws of this.monitorClients) {
-      try {
-        if (ws.readyState === 1) ws.send(msg);
-      } catch {}
-    }
+    this.send(this.monitorClients, msg, "monitor");
   }
 
   broadcastToOrder(token: string, data: object) {
     const msg = JSON.stringify({ type: "order_update", ...data });
     const clients = this.orderClients.get(token);
-    if (clients) {
-      for (const ws of clients) {
-        try {
-          if (ws.readyState === 1) ws.send(msg);
-        } catch {}
-      }
-    }
+    if (clients) this.send(clients, msg, "order");
   }
 
   broadcastToProvider(locationId: number, data: object) {
     const msg = JSON.stringify({ type: "provider_update", ...data });
     const clients = this.providerClients.get(locationId);
     if (!clients) return;
-    for (const ws of clients) {
-      try {
-        if (ws.readyState === 1) ws.send(msg);
-      } catch {}
-    }
+    this.send(clients, msg, "provider");
   }
 }
 
