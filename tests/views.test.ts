@@ -62,7 +62,7 @@ describe("server-rendered views", () => {
     const client = await source("../src/client/admin.ts");
     expect(client).toContain("showModal()");
     expect(client).toContain("const shouldOpen = panel.hidden");
-    expect(client).toContain("function filterOrders(filter: string)");
+    expect(client).not.toContain("function filterOrders");
     expect(client).toContain("data-confirm-password-change");
     expect(client).not.toContain("function showTab");
     const css = await source("../src/styles/admin.css");

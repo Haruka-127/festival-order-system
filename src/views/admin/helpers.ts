@@ -1,7 +1,16 @@
-import type { AdminEvent } from "./types";
+import type { AdminEvent, AdminPagination } from "./types";
 
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+export function renderPagination(pagination?: AdminPagination): string {
+  if (!pagination || pagination.totalPages <= 1) return "";
+  return `<nav class="pagination" aria-label="ページ移動">
+    ${pagination.previousHref ? `<a class="btn btn-sm" href="${escapeHtml(pagination.previousHref)}">← 前へ</a>` : '<span class="btn btn-sm is-disabled" aria-disabled="true">← 前へ</span>'}
+    <span>${pagination.page} / ${pagination.totalPages}ページ</span>
+    ${pagination.nextHref ? `<a class="btn btn-sm" href="${escapeHtml(pagination.nextHref)}">次へ →</a>` : '<span class="btn btn-sm is-disabled" aria-disabled="true">次へ →</span>'}
+  </nav>`;
 }
 
 function statusName(status: string | null): string {

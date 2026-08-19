@@ -1,7 +1,7 @@
 import { config } from "../../config";
 import { formatDateTime } from "../../services/time";
-import { escapeHtml, eventDescription } from "./helpers";
-import type { AdminEvent, AdminLocation, AdminOrderSettings } from "./types";
+import { escapeHtml, eventDescription, renderPagination } from "./helpers";
+import type { AdminEvent, AdminLocation, AdminOrderSettings, AdminPagination } from "./types";
 
 export function renderSettingsSection(settings: AdminOrderSettings, locations: AdminLocation[]): string {
   return `<div id="tab-settings" class="section active">
@@ -68,11 +68,11 @@ export function renderLocationsSection(locations: AdminLocation[]): string {
   </div>`;
 }
 
-export function renderHistorySection(events: AdminEvent[]): string {
+export function renderHistorySection(events: AdminEvent[], pagination?: AdminPagination): string {
   return `<div id="tab-history" class="section active">
     <div class="subpage-heading"><a class="back-button" href="/admin/settings">← 設定へ戻る</a><h2>操作履歴</h2></div>
     <div class="card">
-      <p class="section-description history-description">直近200件の注文・提供状態・管理設定の変更を表示しています</p>
+      <p class="section-description history-description">注文・提供状態・管理設定の変更を新しい順に表示しています</p>
       <div class="table-wrap"><table class="history-table">
         <thead><tr><th>日時</th><th>受付番号</th><th>提供場所</th><th>変更</th><th>担当者</th></tr></thead>
         <tbody>${events.map(event => `<tr>
@@ -82,7 +82,7 @@ export function renderHistorySection(events: AdminEvent[]): string {
           <td>${escapeHtml(eventDescription(event))}</td>
           <td>${escapeHtml(event.username ?? "システム")}</td>
         </tr>`).join("")}</tbody>
-      </table></div>
+      </table></div>${renderPagination(pagination)}
     </div>
   </div>`;
 }

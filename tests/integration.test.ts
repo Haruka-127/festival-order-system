@@ -89,6 +89,27 @@ test("invalid administration forms return to their page with a flash message", a
   expect(await page.text()).toContain("パスワードは10文字以上で入力してください");
 });
 
+test("administration order filters and history pagination are handled by the server", async () => {
+  const db = getDb();
+  runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token) VALUES ('filter-active', 7001, ?, 'preparing', ?)", todayDate(), "9".repeat(64));
+  runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token) VALUES ('filter-completed', 7002, ?, 'delivered', ?)", todayDate(), "8".repeat(64));
+
+  const active = await (await app.handle(request("/admin/orders?status=active", "GET", undefined, "integration-admin"))).text();
+  expect(active).toContain("9".repeat(64));
+  expect(active).not.toContain("8".repeat(64));
+  const completed = await (await app.handle(request("/admin/orders?status=completed", "GET", undefined, "integration-admin"))).text();
+  expect(completed).toContain("8".repeat(64));
+  expect(completed).not.toContain("9".repeat(64));
+
+  for (let index = 0; index < 55; index += 1) {
+    runSql(db, "INSERT INTO audit_events (event_type, actor_username, details) VALUES ('admin_action', 'admin', ?)", JSON.stringify({ action: "test_event", index }));
+  }
+  const history = await (await app.handle(request("/admin/settings/history?page=2", "GET", undefined, "integration-admin"))).text();
+  expect(history).toContain("2 / 2ページ");
+  expect(history).toContain('href="/admin/settings/history?page=1"');
+  expect(history.match(/class="history-date"/g)).toHaveLength(5);
+});
+
 test("reusing an order request id returns the original order without double reservation", async () => {
   const payload = { items: [{ item_id: 1, quantity: 2 }], client_request_id: "integration-request-0001" };
   const first = await app.handle(request("/api/staff/orders", "POST", payload, "integration-cashier"));

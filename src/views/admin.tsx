@@ -4,7 +4,7 @@ import { renderItemsSection } from "./admin/items";
 import { renderOrdersSection } from "./admin/orders";
 import { renderAdvancedSection, renderHistorySection, renderLocationsSection, renderSettingsSection } from "./admin/settings";
 import { renderUsersSection } from "./admin/users";
-import type { AdminEvent, AdminItem, AdminLocation, AdminOrder, AdminOrderSettings, AdminSection, AdminUser } from "./admin/types";
+import type { AdminEvent, AdminItem, AdminLocation, AdminOrder, AdminOrderSettings, AdminPageState, AdminSection, AdminUser } from "./admin/types";
 
 export type { AdminSection } from "./admin/types";
 
@@ -20,12 +20,13 @@ function renderActiveSection(
   settings: AdminOrderSettings,
   events: AdminEvent[],
   currentNum: { number: number; date: string } | null,
+  pageState: AdminPageState,
 ): string {
   if (section === "items") return renderItemsSection(items, locations);
-  if (section === "orders") return renderOrdersSection(orders);
+  if (section === "orders") return renderOrdersSection(orders, pageState);
   if (section === "users") return renderUsersSection(users, locations);
   if (section === "locations") return renderLocationsSection(locations);
-  if (section === "history") return renderHistorySection(events);
+  if (section === "history") return renderHistorySection(events, pageState.pagination);
   if (section === "advanced") return renderAdvancedSection(settings, currentNum);
   return renderSettingsSection(settings, locations);
 }
@@ -42,6 +43,7 @@ export function adminPage(
   flashMessages: FlashMessage[] = [],
   activeSection: AdminSection = "items",
   orderCounts?: { preparing: number; available: number },
+  pageState: AdminPageState = {},
 ): string {
   const serializedFlashMessages = JSON.stringify(flashMessages).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
   const counts = orderCounts ?? {
@@ -76,7 +78,7 @@ export function adminPage(
           <a class="${tabClass("users")}" href="/admin/users" ${activeMainSection === "users" ? 'aria-current="page"' : ""}>スタッフ</a>
           <a class="${tabClass("settings")}" href="/admin/settings" ${activeMainSection === "settings" ? 'aria-current="page"' : ""}>設定</a>
         </nav>
-        <main class="content-area">${renderActiveSection(activeSection, items, orders, users, locations, settings, events, currentNum)}</main>
+        <main class="content-area">${renderActiveSection(activeSection, items, orders, users, locations, settings, events, currentNum, pageState)}</main>
       </div>
     </div>
     <div id="toast-container"></div>`,
