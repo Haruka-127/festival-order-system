@@ -50,10 +50,22 @@ test("admin sections have stable paths", async () => {
   expect(root.status).toBe(302);
   expect(root.headers.get("location")).toBe("/admin/items");
 
-  for (const path of ["/admin/items", "/admin/orders", "/admin/users", "/admin/settings", "/admin/settings/locations", "/admin/settings/history", "/admin/settings/advanced"]) {
+  const pages = [
+    ["/admin/items", "items"],
+    ["/admin/orders", "orders"],
+    ["/admin/users", "users"],
+    ["/admin/settings", "settings"],
+    ["/admin/settings/locations", "locations"],
+    ["/admin/settings/history", "history"],
+    ["/admin/settings/advanced", "advanced"],
+  ] as const;
+  for (const [path, section] of pages) {
     const response = await app.handle(request(path, "GET", undefined, "integration-admin"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
+    const html = await response.text();
+    expect(html).toContain(`id="tab-${section}" class="section active"`);
+    expect(html.match(/id="tab-/g)).toHaveLength(1);
   }
 });
 
@@ -136,13 +148,18 @@ test("cleanup only removes terminal orders older than the retention period and k
   backup.close();
 });
 
-test("a logged-in staff member can change their own password without losing the current session", async () => {
-  const response = await app.handle(request("/account/password", "POST", {
-    current_password: "staff123",
-    new_password: "integration-new-password",
-  }, "integration-cashier"));
-  expect(response.status).toBe(200);
+test("an administrator can change a staff password and revoke existing sessions", async () => {
+  const response = await app.handle(request("/api/admin/users/staff-id/password", "POST", {
+    password: "administrator-managed-password",
+  }, "integration-admin"));
+  expect(response.status).toBe(303);
+  expect(response.headers.get("location")).toBe("/admin/users");
   const account = getOne<{ password_hash: string }>(getDb(), "SELECT password_hash FROM users WHERE id = 'staff-id'")!;
-  expect(await Bun.password.verify("integration-new-password", account.password_hash)).toBe(true);
-  expect(getOne(getDb(), "SELECT id FROM sessions WHERE id = 'integration-cashier'")).toBeTruthy();
+  expect(await Bun.password.verify("administrator-managed-password", account.password_hash)).toBe(true);
+  expect(getOne(getDb(), "SELECT id FROM sessions WHERE id = 'integration-cashier'")).toBeNull();
+});
+
+test("staff password changes are only exposed through administration", async () => {
+  const response = await app.handle(request("/account/password", "GET", undefined, "integration-cashier"));
+  expect(response.status).toBe(404);
 });

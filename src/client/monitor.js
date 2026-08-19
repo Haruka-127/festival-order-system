@@ -11,7 +11,6 @@ const PAGE_SIZE = 10;
     let reconnectDelay = 3000;
     const currentDate = document.body.dataset.currentDate || '';
 
-    const escapeHtml = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     const pad = value => String(value).padStart(Number(document.body.dataset.displayDigits || '3'), '0');
 
     function flatten(key) {
@@ -27,14 +26,38 @@ const PAGE_SIZE = 10;
       const start = currentPage * PAGE_SIZE;
       const visible = entries.slice(start, start + PAGE_SIZE);
       root.classList.toggle('dense', visible.length > 7);
-      if (!visible.length) { root.innerHTML = ''; return; }
+      if (!visible.length) { root.replaceChildren(); return; }
       const groups = [];
       for (const entry of visible) {
         let group = groups.at(-1);
         if (!group || group.id !== entry.location_id) { group = { id: entry.location_id, name: entry.location_name, entries: [] }; groups.push(group); }
         group.entries.push(entry);
       }
-      root.innerHTML = groups.map(group => '<section class="location"><h2 class="location-name">' + escapeHtml(group.name) + '</h2><div class="numbers">' + group.entries.map(entry => '<div class="number' + (newIds.has(entry.fulfillment_id) ? ' new' : '') + '" data-id="' + escapeHtml(entry.fulfillment_id) + '">' + pad(entry.display_number) + (entry.display_number_date && entry.display_number_date !== currentDate ? '<span class="date-label">' + escapeHtml(entry.display_number_date) + '</span>' : '') + '</div>').join('') + '</div></section>').join('');
+      const sections = groups.map(group => {
+        const section = document.createElement('section');
+        section.className = 'location';
+        const heading = document.createElement('h2');
+        heading.className = 'location-name';
+        heading.textContent = group.name;
+        const numbers = document.createElement('div');
+        numbers.className = 'numbers';
+        for (const entry of group.entries) {
+          const number = document.createElement('div');
+          number.className = 'number' + (newIds.has(entry.fulfillment_id) ? ' new' : '');
+          number.dataset.id = String(entry.fulfillment_id);
+          number.append(pad(entry.display_number));
+          if (entry.display_number_date && entry.display_number_date !== currentDate) {
+            const date = document.createElement('span');
+            date.className = 'date-label';
+            date.textContent = entry.display_number_date;
+            number.append(date);
+          }
+          numbers.append(number);
+        }
+        section.append(heading, numbers);
+        return section;
+      });
+      root.replaceChildren(...sections);
     }
 
     function render() {

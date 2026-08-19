@@ -22,10 +22,15 @@ export function adminPage(
   events: EventSummary[] = [],
   flashMessages: FlashMessage[] = [],
   activeSection: AdminSection = "items",
+  orderCounts?: { preparing: number; available: number },
 ): string {
   const statusLabels: Record<string, string> = { preparing: "準備中", available: "提供可能", delivered: "受渡済", cancelled: "キャンセル" };
   const statusColors: Record<string, string> = { preparing: "badge-blue", available: "badge-green", delivered: "badge-gray", cancelled: "badge-red" };
   const serializedFlashMessages = JSON.stringify(flashMessages).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+  const overviewCounts = orderCounts ?? {
+    preparing: orders.filter(order => order.status === "preparing").length,
+    available: orders.filter(order => order.status === "available").length,
+  };
   const activeMainSection = ["locations", "history", "advanced"].includes(activeSection) ? "settings" : activeSection;
   const sectionClass = (section: AdminSection) => `section${activeSection === section ? " active" : ""}`;
   const tabClass = (section: AdminSection) => `tab${activeMainSection === section ? " active" : ""}`;
@@ -55,8 +60,8 @@ return pageDocument({
 
     <section class="overview" aria-label="現在の注文状況">
       <div class="overview-item"><span class="status-dot ${settings.ordering_enabled ? "is-open" : "is-closed"}" aria-hidden="true"></span><span class="overview-label">注文</span><strong class="overview-value">${settings.ordering_enabled ? "受付中" : "停止中"}</strong></div>
-      <div class="overview-item"><span class="overview-label">お待ち</span><strong class="overview-value">${orders.filter(o => o.status === "preparing").length}<small> 件</small></strong></div>
-      <div class="overview-item"><span class="overview-label">呼び出し中</span><strong class="overview-value">${orders.filter(o => o.status === "available").length}<small> 件</small></strong></div>
+      <div class="overview-item"><span class="overview-label">お待ち</span><strong class="overview-value">${overviewCounts.preparing}<small> 件</small></strong></div>
+      <div class="overview-item"><span class="overview-label">呼び出し中</span><strong class="overview-value">${overviewCounts.available}<small> 件</small></strong></div>
     </section>
 
     <div class="workspace">
@@ -68,7 +73,8 @@ return pageDocument({
       </nav>
       <main class="content-area">
 
-    <!-- Items Tab -->
+    ${activeSection === "items" ? `
+    <!-- Items Page -->
     <div id="tab-items" class="${sectionClass("items")}">
       <div class="card">
         <div class="section-tools">
@@ -76,11 +82,11 @@ return pageDocument({
           <button type="button" class="btn btn-success btn-sm" data-action="show-add-item" aria-controls="add-item-form" aria-expanded="false">＋ 新規商品</button>
         </div>
         <div id="add-item-form" class="add-panel" hidden>
-          <h3 style="font-size:15px;margin-bottom:8px">新規商品を追加</h3>
+          <h3>新規商品を追加</h3>
           <form method="POST" action="/api/admin/items" class="form-row">
             <div class="form-group"><input type="text" name="name" placeholder="商品名" required></div>
             <div class="form-group"><select name="fulfillment_location_id" required><option value="">提供場所を選択</option>${locations.filter(location => location.active).map(location => `<option value="${location.id}">${escapeHtml(location.name)}</option>`).join("")}</select></div>
-            <div class="form-group"><input type="number" name="sort_order" placeholder="表示順" value="0" style="max-width:100px"></div>
+            <div class="form-group sort-order-input"><input type="number" name="sort_order" placeholder="表示順" value="0"></div>
             <div><button type="submit" class="btn btn-primary">追加</button></div>
           </form>
         </div>
@@ -141,8 +147,10 @@ return pageDocument({
         </div>
       </div>
     </div>
+    ` : ""}
 
-    <!-- Orders Tab -->
+    ${activeSection === "orders" ? `
+    <!-- Orders Page -->
     <div id="tab-orders" class="${sectionClass("orders")}">
       <div class="card">
         <div class="section-tools section-tools-wrap">
@@ -172,8 +180,10 @@ return pageDocument({
         </div>
       </div>
     </div>
+    ` : ""}
 
-    <!-- Users Tab -->
+    ${activeSection === "users" ? `
+    <!-- Users Page -->
     <div id="tab-users" class="${sectionClass("users")}">
       <div class="card">
         <div class="section-tools">
@@ -181,10 +191,10 @@ return pageDocument({
           <button type="button" class="btn btn-success btn-sm" data-action="show-add-user" aria-controls="add-user-form" aria-expanded="false">＋ 新規スタッフ</button>
         </div>
         <div id="add-user-form" class="add-panel" hidden>
-          <h3 style="font-size:15px;margin-bottom:8px">スタッフを追加</h3>
+          <h3>スタッフを追加</h3>
           <form method="POST" action="/api/admin/users" class="form-row">
             <div class="form-group"><input type="text" name="username" placeholder="ユーザー名" required></div>
-            <div class="form-group"><input type="password" name="password" minlength="10" placeholder="パスワード（10文字以上）" required></div>
+            <div class="form-group"><input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="128" placeholder="パスワード（10文字以上）" required></div>
             <div class="form-group"><select name="staff_type"><option value="cashier">注文受付担当</option><option value="provider">提供担当</option></select></div>
             <div class="form-group"><select name="fulfillment_location_id"><option value="">提供担当の場合に選択</option>${locations.filter(location => location.active).map(location => `<option value="${location.id}">${escapeHtml(location.name)}</option>`).join("")}</select></div>
             <div><button type="submit" class="btn btn-primary">追加</button></div>
@@ -208,8 +218,9 @@ return pageDocument({
                         <label>提供場所</label><select name="fulfillment_location_id"><option value="">提供担当の場合に選択</option>${locations.filter(location => location.active).map(location => `<option value="${location.id}" ${u.fulfillment_location_id === location.id ? "selected" : ""}>${escapeHtml(location.name)}</option>`).join("")}</select>
                         <button type="submit" class="btn btn-sm btn-primary">設定を更新</button>
                       </form>
-                      <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/password">
-                        <label>新しいパスワード</label><input type="password" name="password" minlength="10" required placeholder="10文字以上">
+                      <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/password" data-confirm-password-change data-username="${escapeHtml(u.username)}">
+                        <label>新しいパスワード</label><input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="128" required placeholder="10文字以上">
+                        <p class="form-note">変更後、このスタッフはすべての端末で再ログインが必要です。</p>
                         <button type="submit" class="btn btn-sm">パスワードを変更</button>
                       </form>
                       <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/delete" data-confirm-delete-user><button type="submit" class="btn btn-sm btn-danger">スタッフを削除</button></form>
@@ -224,8 +235,10 @@ return pageDocument({
         </div>
       </div>
     </div>
+    ` : ""}
 
-    <!-- Secondary settings: Locations -->
+    ${activeSection === "locations" ? `
+    <!-- Locations Page -->
     <div id="tab-locations" class="${sectionClass("locations")}">
       <div class="subpage-heading">
         <a class="back-button" href="/admin/settings">← 設定へ戻る</a>
@@ -266,8 +279,10 @@ return pageDocument({
         </div>
       </div>`).join("")}
     </div>
+    ` : ""}
 
-    <!-- Secondary settings: History -->
+    ${activeSection === "history" ? `
+    <!-- History Page -->
     <div id="tab-history" class="${sectionClass("history")}">
       <div class="subpage-heading">
         <a class="back-button" href="/admin/settings">← 設定へ戻る</a>
@@ -278,8 +293,8 @@ return pageDocument({
         <div class="table-wrap"><table class="history-table">
           <thead><tr><th>日時</th><th>受付番号</th><th>提供場所</th><th>変更</th><th>担当者</th></tr></thead>
           <tbody>${events.map(event => `<tr>
-            <td style="font-size:12px">${formatDateTime(event.created_at)}</td>
-            <td style="font-weight:700">${event.display_number == null ? "---" : config.displayNumberPad(event.display_number)}</td>
+            <td class="history-date">${formatDateTime(event.created_at)}</td>
+            <td class="history-number">${event.display_number == null ? "---" : config.displayNumberPad(event.display_number)}</td>
             <td>${escapeHtml(event.location_name ?? "---")}</td>
             <td>${escapeHtml(eventDescription(event))}</td>
             <td>${escapeHtml(event.username ?? "システム")}</td>
@@ -287,8 +302,10 @@ return pageDocument({
         </table></div>
       </div>
     </div>
+    ` : ""}
 
-    <!-- Settings Tab -->
+    ${activeSection === "settings" ? `
+    <!-- Settings Page -->
     <div id="tab-settings" class="${sectionClass("settings")}">
       <div class="page-heading"><h2>設定</h2><p>営業中によく変更する項目だけを表示しています</p></div>
       <div class="card settings-card">
@@ -319,8 +336,10 @@ return pageDocument({
         <a class="settings-link" href="/admin/settings/advanced"><span><strong>詳細設定・データ管理</strong><small>注文上限、番号、バックアップなど</small></span><span aria-hidden="true">›</span></a>
       </div>
     </div>
+    ` : ""}
 
-    <!-- Secondary settings: Advanced -->
+    ${activeSection === "advanced" ? `
+    <!-- Advanced Settings Page -->
     <div id="tab-advanced" class="${sectionClass("advanced")}">
       <div class="subpage-heading">
         <a class="back-button" href="/admin/settings">← 設定へ戻る</a>
@@ -346,8 +365,8 @@ return pageDocument({
       <div class="card compact-card">
         <h3>管理者パスワード</h3>
         <form method="POST" action="/api/admin/password" class="form-row">
-          <div class="form-group"><label>現在のパスワード</label><input type="password" name="current_password" required></div>
-          <div class="form-group"><label>新しいパスワード</label><input type="password" name="new_password" minlength="10" required></div>
+          <div class="form-group"><label>現在のパスワード</label><input type="password" name="current_password" autocomplete="current-password" required></div>
+          <div class="form-group"><label>新しいパスワード</label><input type="password" name="new_password" autocomplete="new-password" minlength="10" maxlength="128" required></div>
           <div><button type="submit" class="btn btn-primary">パスワードを変更</button></div>
         </form>
       </div>
@@ -372,12 +391,12 @@ return pageDocument({
         <p class="setting-help">${settings.completed_order_retention_days}日より古い受渡済み・キャンセル注文だけを削除します。監査履歴は保持されます。</p>
       </div>
     </div>
+    ` : ""}
       </main>
     </div>
   </div>
 
   <div id="toast-container"></div>
-  <div id="confirm-modal" style="display:none"></div>
     `,
   });
 }

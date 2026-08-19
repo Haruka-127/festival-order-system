@@ -7,8 +7,24 @@ let savedDraft = null;
     let pendingPayloadSignature = savedDraft?.signature || '';
     const currentDate = document.body.dataset.currentDate || '';
 
-    function escapeHtml(s) {
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    function createElement(tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = String(text);
+      return element;
+    }
+
+    function showEmpty(container, message) {
+      container.replaceChildren(createElement('div', 'empty-orders', message));
+    }
+
+    function fulfillmentLine(fulfillment) {
+      const line = createElement('div', 'fulfillment-line');
+      line.append(createElement('strong', '', fulfillment.location_name));
+      const status = fulfillment.status === 'preparing' ? '準備中' : fulfillment.status === 'ready' ? '提供可能' : fulfillment.status === 'handed_over' ? '受渡済' : 'キャンセル';
+      line.append(' ', createElement('span', 'fulfillment-status', status), document.createElement('br'));
+      line.append(fulfillment.items.map(item => item.name + ' x' + item.quantity).join(', '));
+      return line;
     }
 
     function addToCart(id) {
@@ -55,33 +71,40 @@ let savedDraft = null;
         const badge = document.getElementById('badge-' + id);
         b.classList.toggle('selected', qty > 0);
         if (qty > 0) {
-          if (badge) { badge.textContent = qty; badge.style.display = 'flex'; }
+          if (badge) { badge.textContent = qty; badge.hidden = false; }
         } else {
-          if (badge) { badge.style.display = 'none'; }
+          if (badge) { badge.hidden = true; }
         }
       });
 
       if (entries.length === 0) {
-        container.innerHTML = '<div class="empty-orders">商品を選択してください</div>';
-        total.style.display = 'none';
-        submitBtn.style.display = 'none';
+        showEmpty(container, '商品を選択してください');
+        total.hidden = true;
+        submitBtn.hidden = true;
         return;
       }
 
-      let html = '';
       let count = 0;
+      const rows = [];
       for (const [id, qty] of entries) {
         const name = document.querySelector('.menu-btn[data-id="'+id+'"]')?.dataset.name || '商品';
         count += qty;
-        html += '<div class="cart-item">';
-        html += '<span>' + escapeHtml(name) + '</span>';
-        html += '<div class="cart-qty"><button data-change-item-id="'+id+'" data-delta="-1">−</button><span>' + qty + '</span><button data-change-item-id="'+id+'" data-delta="1">+</button></div>';
-        html += '</div>';
+        const row = createElement('div', 'cart-item');
+        const quantity = createElement('div', 'cart-qty');
+        const decrease = createElement('button', '', '−');
+        decrease.dataset.changeItemId = String(id);
+        decrease.dataset.delta = '-1';
+        const increase = createElement('button', '', '+');
+        increase.dataset.changeItemId = String(id);
+        increase.dataset.delta = '1';
+        quantity.append(decrease, createElement('span', '', qty), increase);
+        row.append(createElement('span', '', name), quantity);
+        rows.push(row);
       }
-      container.innerHTML = html;
-      total.style.display = 'flex';
+      container.replaceChildren(...rows);
+      total.hidden = false;
       document.getElementById('cart-count').textContent = count + '点';
-      submitBtn.style.display = 'block';
+      submitBtn.hidden = false;
     }
 
     async function submitOrder() {
@@ -122,15 +145,16 @@ let savedDraft = null;
         updateCart();
 
         // Show result modal
-        let modalBody = '<div class="text-lg font-bold">注文を受け付けました</div>';
-        modalBody += '<div class="big-num">' + padNum(data.display_number) + '</div>';
-        modalBody += '<div style="font-size:14px;color:#6b7280;margin-bottom:8px">受付番号</div>';
-
-        modalBody += '<div style="font-size:12px;color:#6b7280;margin-bottom:12px">受付番号をお客様へお伝えください</div>';
-        modalBody += '<button class="btn btn-primary" data-action="close-modal" style="min-width:120px">閉じる</button>';
-
-        document.getElementById('modal-body').innerHTML = modalBody;
-        document.getElementById('modal').style.display = 'flex';
+        const closeButton = createElement('button', 'btn btn-primary modal-close-button', '閉じる');
+        closeButton.dataset.action = 'close-modal';
+        document.getElementById('modal-body').replaceChildren(
+          createElement('div', 'text-lg font-bold', '注文を受け付けました'),
+          createElement('div', 'big-num', padNum(data.display_number)),
+          createElement('div', 'modal-label', '受付番号'),
+          createElement('div', 'modal-help', '受付番号をお客様へお伝えください'),
+          closeButton,
+        );
+        document.getElementById('modal').hidden = false;
 
         // Refresh order list
         refreshOrders();
@@ -149,13 +173,13 @@ let savedDraft = null;
 
     function closeModal(e) {
       if (e && e.target !== document.getElementById('modal')) return;
-      document.getElementById('modal').style.display = 'none';
+      document.getElementById('modal').hidden = true;
     }
 
     document.addEventListener('keydown', function(e) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       const modal = document.getElementById('modal');
-      if (modal.style.display === 'flex') {
+      if (!modal.hidden) {
         if (e.key === 'Enter') { closeModal(); }
         return;
       }
@@ -193,15 +217,15 @@ let savedDraft = null;
     function applyOrderFilter() {
       const cards = document.querySelectorAll('.order-card');
       cards.forEach(c => {
-        if (currentFilter === 'all') { c.style.display = ''; return; }
-        c.style.display = c.dataset.status === currentFilter ? '' : 'none';
+        if (currentFilter === 'all') { c.hidden = false; return; }
+        c.hidden = c.dataset.status !== currentFilter;
       });
     }
 
     function filterItems(q) {
       document.querySelectorAll('.menu-btn').forEach(b => {
         const name = (b.dataset.name || '').toLowerCase();
-        b.style.display = name.includes(q.toLowerCase()) ? '' : 'none';
+        b.hidden = !name.includes(q.toLowerCase());
       });
     }
 
@@ -241,30 +265,32 @@ let savedDraft = null;
         const data = await res.json();
         const container = document.getElementById('order-list');
         if (data.length === 0) {
-          container.innerHTML = '<div class="empty-orders">現在、注文はありません</div>';
+          showEmpty(container, '現在、注文はありません');
           return;
         }
-        container.innerHTML = data.map(o => {
-          const orderId = escapeHtml(String(o.id));
-          const previousDate = o.display_number_date && o.display_number_date !== currentDate ? '<span class="panel-note">' + escapeHtml(o.display_number_date) + '受付</span>' : '';
+        const orderCards = data.map(o => {
+          const orderId = String(o.id);
           const displayFulfillments = o.fulfillments || [{ id: o.id, location_name: '既定提供場所', status: o.status === 'available' ? 'ready' : o.status, items: o.items || [] }];
-          const fulfillmentHtml = displayFulfillments.map(f => {
-            const label = f.status === 'preparing' ? '準備中' : f.status === 'ready' ? '提供可能' : f.status === 'handed_over' ? '受渡済' : 'キャンセル';
-            return '<div class="fulfillment-line"><strong>' + escapeHtml(f.location_name) + '</strong> <span style="color:#6b7280">' + label + '</span><br>' + f.items.map(i => escapeHtml(i.name) + ' x' + i.quantity).join(', ') + '</div>';
-          }).join('');
           const statusClass = o.status === 'preparing' ? 'status-preparing' : o.status === 'available' ? 'status-available' : o.status === 'delivered' ? 'status-delivered' : 'status-cancelled';
           const hasReady = displayFulfillments.some(f => f.status === 'ready' || f.status === 'handed_over');
           const statusLabel = o.status === 'available' ? '全ブース提供可能' : hasReady ? '一部提供可能' : '準備中';
-          const actions = '<button class="btn-cancel" data-order-id="' + orderId + '" data-order-status="cancelled">注文をキャンセル</button>';
-          return '<div class="order-card' + (o.status === 'available' ? ' available' : '') + '" data-status="' + o.status + '">' +
-            '<div class="order-header">' +
-            '<span class="order-num">' + padNum(o.display_number) + '</span>' + previousDate +
-            '<span class="badge ' + statusClass + '">' + statusLabel + '</span>' +
-            '</div>' +
-            '<div class="order-items">' + fulfillmentHtml + '</div>' +
-            '<div class="order-actions">' + actions + '</div>' +
-            '</div>';
-        }).join('');
+          const card = createElement('div', 'order-card' + (o.status === 'available' ? ' available' : ''));
+          card.dataset.status = o.status;
+          const header = createElement('div', 'order-header');
+          header.append(createElement('span', 'order-num', padNum(o.display_number)));
+          if (o.display_number_date && o.display_number_date !== currentDate) header.append(createElement('span', 'panel-note', o.display_number_date + '受付'));
+          header.append(createElement('span', 'badge ' + statusClass, statusLabel));
+          const orderItems = createElement('div', 'order-items');
+          orderItems.append(...displayFulfillments.map(fulfillmentLine));
+          const cancel = createElement('button', 'btn-cancel', '注文をキャンセル');
+          cancel.dataset.orderId = orderId;
+          cancel.dataset.orderStatus = 'cancelled';
+          const actions = createElement('div', 'order-actions');
+          actions.append(cancel);
+          card.append(header, orderItems, actions);
+          return card;
+        });
+        container.replaceChildren(...orderCards);
         document.getElementById('last-updated').textContent = '最終更新 ' + new Date().toLocaleTimeString('ja-JP');
         applyOrderFilter();
       } catch (e) {
@@ -285,14 +311,23 @@ let savedDraft = null;
         }
         if (removed) { invalidatePendingRequest(); showToast('販売状態が変わった商品をカートから外しました'); }
         const grid = document.getElementById('menu-grid');
-        grid.innerHTML = items.map((item, index) => {
+        const menuButtons = items.map((item, index) => {
           const key = index < 9 ? index + 1 : 0;
-          return '<button class="menu-btn ' + (item.sold_out ? 'sold-out' : '') + '" data-id="' + item.id + '" data-name="' + escapeHtml(item.name) + '" data-key="' + key + '" data-add-item-id="' + item.id + '" ' + (item.sold_out ? 'disabled' : '') + '>' +
-            '<span class="key-hint">' + key + '</span>' + escapeHtml(item.name) +
-            '<span class="item-location">' + escapeHtml(item.location_name || '既定提供場所') + '</span>' +
-            (item.sold_out ? '<span class="soldout-label">売り切れ</span>' : '') +
-            '<span class="cart-badge" id="badge-' + item.id + '" style="display:none">0</span></button>';
-        }).join('');
+          const button = createElement('button', 'menu-btn' + (item.sold_out ? ' sold-out' : ''));
+          button.dataset.id = String(item.id);
+          button.dataset.name = item.name;
+          button.dataset.key = String(key);
+          button.dataset.addItemId = String(item.id);
+          button.disabled = Boolean(item.sold_out);
+          button.append(createElement('span', 'key-hint', key), item.name, createElement('span', 'item-location', item.location_name || '既定提供場所'));
+          if (item.sold_out) button.append(createElement('span', 'soldout-label', '売り切れ'));
+          const badge = createElement('span', 'cart-badge', '0');
+          badge.id = 'badge-' + item.id;
+          badge.hidden = true;
+          button.append(badge);
+          return button;
+        });
+        grid.replaceChildren(...menuButtons);
         updateCart();
         filterItems(document.getElementById('item-search').value);
       } catch { document.getElementById('last-updated').textContent = '通信を再確認中'; }

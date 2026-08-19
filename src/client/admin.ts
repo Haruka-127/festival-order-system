@@ -121,7 +121,12 @@ function filterOrders(filter: string): void {
     });
 
     document.addEventListener('submit', event => {
-      if (event.target instanceof Element && event.target.matches('form[data-confirm-delete-user]') && !confirm('このスタッフを削除しますか？')) event.preventDefault();
+      if (!(event.target instanceof HTMLFormElement)) return;
+      if (event.target.matches('form[data-confirm-delete-user]') && !confirm('このスタッフを削除しますか？')) event.preventDefault();
+      if (event.target.matches('form[data-confirm-password-change]')) {
+        const username = event.target.dataset.username || 'このスタッフ';
+        if (!confirm(username + ' のパスワードを変更しますか？\n変更後、すべての端末で再ログインが必要です。')) event.preventDefault();
+      }
     });
 
     const flashMessages = JSON.parse(document.body.dataset.flashMessages || '[]') as FlashMessage[];

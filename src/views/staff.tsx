@@ -17,7 +17,7 @@ return pageDocument({
     <div class="brand"><div class="brand-mark" aria-hidden="true">注</div><div><div class="brand-kicker">FESTIVAL ORDER SYSTEM</div><h1>注文受付</h1></div></div>
     <div class="topbar-actions">
       <span class="current-time">${formatDateTime(new Date())}</span>
-      <form method="POST" action="/logout" style="display:inline"><button type="submit" class="btn">ログアウト</button></form>
+      <form method="POST" action="/logout" class="inline-form"><button type="submit" class="btn">ログアウト</button></form>
     </div>
   </header>
   <div class="app">
@@ -29,11 +29,11 @@ return pageDocument({
         <div id="cart-items" aria-live="polite">
           <div class="empty-orders">商品を選択してください</div>
         </div>
-        <div id="cart-total" class="cart-total" style="display:none">
+        <div id="cart-total" class="cart-total" hidden>
           <span>合計</span>
           <span id="cart-count">0点</span>
         </div>
-        <button id="submit-order" class="btn btn-success btn-lg btn-block mt-2" style="display:none" data-action="submit-order">
+        <button id="submit-order" class="btn btn-success btn-lg btn-block mt-2" hidden data-action="submit-order">
           注文を確定する
         </button>
       </div>
@@ -53,7 +53,7 @@ return pageDocument({
             ${escapeHtml(item.name)}
             <span class="item-location">${escapeHtml(item.location_name ?? "既定提供場所")}</span>
             ${item.sold_out ? '<span class="soldout-label">売り切れ</span>' : ''}
-            <span class="cart-badge" id="badge-${item.id}" style="display:none">0</span>
+            <span class="cart-badge" id="badge-${item.id}" hidden>0</span>
           </button>`;
         }).join("")}
       </div>
@@ -74,7 +74,7 @@ return pageDocument({
     </div>
   </div>
 
-  <div id="modal" class="modal-overlay" style="display:none">
+  <div id="modal" class="modal-overlay" hidden>
     <div class="modal-content" id="modal-content" role="dialog" aria-modal="true" aria-label="注文受付結果">
       <div id="modal-body"></div>
     </div>
@@ -94,7 +94,7 @@ function orderCard(order: CashierOrder): string {
   const fulfillmentHtml = fulfillments.map(fulfillment => {
     const label = { preparing: "準備中", ready: "提供可能", handed_over: "受渡済", cancelled: "キャンセル" }[fulfillment.status] ?? fulfillment.status;
     const items = fulfillment.items.map(item => `${escapeHtml(item.name)} x${item.quantity}`).join(", ");
-    return `<div class="fulfillment-line"><strong>${escapeHtml(fulfillment.location_name)}</strong> <span style="color:#6b7280">${label}</span><br>${items}</div>`;
+    return `<div class="fulfillment-line"><strong>${escapeHtml(fulfillment.location_name)}</strong> <span class="fulfillment-status">${label}</span><br>${items}</div>`;
   }).join("");
   const hasReady = fulfillments.some(fulfillment => fulfillment.status === "ready" || fulfillment.status === "handed_over");
   const statusLabel = order.status === "available" ? "全ブース提供可能" : hasReady ? "一部提供可能" : "準備中";

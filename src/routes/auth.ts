@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { getDb, getOne, runSql } from "../db/database";
 import { config } from "../config";
-import { accountPasswordPage, loginPage } from "../views/components";
+import { loginPage } from "../views/components";
 import { authMiddleware } from "../middleware/auth";
 import { LoginRateLimiter } from "../security";
 import { isIP } from "node:net";
@@ -108,32 +108,6 @@ export const authRoutes = new Elysia()
 
     set.status = 302;
     set.headers = { Location: homeForRole(row.role === "admin" ? "admin" : row.staff_type) };
-  })
-  .get("/account/password", ({ getUser }) => {
-    const user = getUser();
-    if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
-    return new Response(accountPasswordPage(homeForRole(user.role)), { headers: { "Content-Type": "text/html; charset=utf-8" } });
-  })
-  .post("/account/password", async ({ body, getUser, cookie: { session_id } }) => {
-    const user = getUser();
-    if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
-    const { current_password, new_password } = (body ?? {}) as { current_password?: string; new_password?: string };
-    const home = homeForRole(user.role);
-    if (typeof current_password !== "string" || typeof new_password !== "string" || new_password.length < 10 || new_password.length > 128) {
-      return new Response(accountPasswordPage(home, "新しいパスワードは10文字以上で入力してください", true), { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
-    }
-    const db = getDb();
-    const account = getOne<{ password_hash: string }>(db, "SELECT password_hash FROM users WHERE id = ?", user.id);
-    if (!account || !await Bun.password.verify(current_password, account.password_hash)) {
-      return new Response(accountPasswordPage(home, "現在のパスワードが正しくありません", true), { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } });
-    }
-    const passwordHash = await Bun.password.hash(new_password);
-    db.transaction(() => {
-      runSql(db, "UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, user.id);
-      if (session_id?.value) runSql(db, "DELETE FROM sessions WHERE user_id = ? AND id != ?", user.id, String(session_id.value));
-      else runSql(db, "DELETE FROM sessions WHERE user_id = ?", user.id);
-    })();
-    return new Response(accountPasswordPage(home, "パスワードを変更しました"), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .post("/logout", ({ set, cookie: { session_id } }) => {
     const sid = session_id?.value;

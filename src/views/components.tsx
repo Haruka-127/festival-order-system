@@ -33,20 +33,3 @@ export function notFoundPage(): string {
     </main>
   ));
 }
-
-export function accountPasswordPage(homePath: string, message = "", error = false): string {
-  return authDocument("パスワード変更", (
-    <main class="auth-page">
-      <section class="auth-card">
-        <h1>パスワード変更</h1>
-        {message ? <div class={`alert ${error ? "alert-error" : "alert-success"}`} safe>{message}</div> : ""}
-        <form method="POST" action="/account/password" class="auth-form">
-          <label>現在のパスワード<input type="password" name="current_password" autocomplete="current-password" required /></label>
-          <label>新しいパスワード<input type="password" name="new_password" autocomplete="new-password" minlength="10" maxlength="128" required /></label>
-          <button type="submit" class="primary-button">変更する</button>
-        </form>
-        <a class="back-link" href={homePath}>元の画面へ戻る</a>
-      </section>
-    </main>
-  ));
-}
