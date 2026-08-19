@@ -150,6 +150,9 @@ db.close();
 "
 ```
 
+管理画面の「今すぐバックアップ」からも、整合したスナップショットを
+`{DATA_DIR}/backups/orders-<UTC日時>.db` に作成できる。古い完了注文を削除する際も、削除前に同じ形式のバックアップを自動作成し、作成に失敗した場合は削除を中止する。
+
 ### 復元
 
 ```bash
@@ -169,7 +172,9 @@ bun run src/index.ts
 - **Enterキー**で注文を確定、確定後のモーダルもEnterで閉じられる
 - 注文確定後は受付番号のみをモーダル表示
 - 提供場所ごとの進捗確認と注文全体のキャンセル
-- 注文リストは5秒間隔で自動更新
+- 注文・商品一覧は5秒間隔で自動更新
+- 通信結果が不明な場合も同一リクエストIDで再送し、二重注文を防止
+- キャンセル時は確認と理由入力が必要。受渡済み商品を含む注文全体はキャンセル不可
 
 ### 管理画面 (`/admin`)
 
@@ -184,6 +189,8 @@ bun run src/index.ts
 - ログインアカウントの所属提供場所に必要な商品だけを表示
 - 準備中から提供可能、提供可能から受渡済みへ変更
 - WebSocketと定期再取得で注文をリアルタイム更新
+- 受渡完了後2分間は画面から取り消し可能
+- 接続状態と最終同期時刻を表示
 
 ### モニター画面 (`/monitor`)
 
@@ -191,6 +198,7 @@ bun run src/index.ts
 - 各列の中を提供場所ごとにグループ化
 - 準備中はグレー、呼び出し中は濃いグリーンで表示
 - WebSocketでリアルタイム更新
+- WebSocketが利用できない場合は15秒間隔の再取得へ自動フォールバック
 - 新しく追加・移動した番号は控えめなフェードで表示
 - 全画面表示に対応
 
@@ -199,6 +207,7 @@ bun run src/index.ts
 - 受付番号を大きく表示
 - 提供場所ごとの状態と注文内容を表示
 - WebSocketでリアルタイム更新
+- WebSocketが利用できない場合は15秒間隔で再取得
 - スマートフォン表示に最適化
 
 ## 注文フロー
@@ -246,6 +255,10 @@ bun run src/index.ts
 | POST | `/api/admin/settings/orders` | 管理者 | 注文受付・上限設定 |
 | POST | `/api/admin/reset-numbers` | 管理者 | 番号リセット |
 | POST | `/api/admin/cleanup` | 管理者 | 古い注文削除 |
+| GET | `/api/admin/cleanup/preview` | 管理者 | 削除対象件数・期間の確認 |
+| POST | `/api/admin/backup` | 管理者 | DBスナップショット作成 |
+| POST | `/account/password` | ログインユーザー | 自分のパスワード変更 |
+| GET | `/api/staff/items` | 受付担当・管理者 | 最新の商品販売状態 |
 
 ### 認証不要のエンドポイント
 
@@ -258,6 +271,8 @@ bun run src/index.ts
 | GET | `/order/:token` | 利用客ページ |
 | GET | `/api/order/:token` | 注文情報API |
 | GET | `/api/qr/:token` | QRコード画像 |
+| GET | `/health/live` | プロセスの稼働確認 |
+| GET | `/health/ready` | DBを含む準備完了確認 |
 | GET | `/api/monitor/board` | 提供場所別の待ち・呼び出し番号一覧 |
 
 ## WebSocket
@@ -268,7 +283,7 @@ bun run src/index.ts
 | `/ws/provider` | 提供担当画面向け | `{ "type": "provider_update", "tasks": [...] }` |
 | `/ws/order/:token` | 利用客画面向け | `{ "type": "order_update", "fulfillments": [...] }` |
 
-接続時、その時点の最新状態が送信される。
+接続時、その時点の最新状態が送信される。顧客・モニター・提供担当画面は切断状態を表示し、定期再取得も併用する。
 
 ## HTTPS / リバースプロキシ
 
@@ -346,6 +361,9 @@ tmux new-session -s festival 'bun run src/index.ts'
 # 全テスト実行
 bun test
 
+# 型チェック・テスト・ビルドを一括実行
+bun run check
+
 # 特定のテストファイル
 bun test tests/auth.test.ts
 bun test tests/orders.test.ts
@@ -354,6 +372,7 @@ bun test tests/views.test.ts
 ```
 
 テストは `./data-test/` ディレクトリに一時的なデータベースを作成する。
+GitHub Actionsでも同じチェックを実行する。
 
 ## 初期設定手順
 
