@@ -1,0 +1,7 @@
+export type AdminItem = { id: number; name: string; active: number; sold_out: number; sort_order: number; fulfillment_location_id?: number; location_name?: string; max_quantity_per_order?: number | null; daily_limit?: number | null };
+export type AdminOrder = { id: string; display_number: number; status: string; created_at: string; items: string; token: string };
+export type AdminUser = { id: string; username: string; role: string; staff_type?: string; fulfillment_location_id?: number | null; location_name?: string | null; created_at: string };
+export type AdminLocation = { id: number; name: string; slug: string; active: number; sort_order: number; max_preparing_orders: number | null; max_preparing_units: number | null };
+export type AdminOrderSettings = { ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number; completed_order_retention_days: number };
+export type AdminEvent = { display_number: number | null; location_name: string | null; event_type: string; from_status: string | null; to_status: string | null; username: string | null; details: string | null; created_at: string };
+export type AdminSection = "items" | "orders" | "users" | "settings" | "locations" | "history" | "advanced";
