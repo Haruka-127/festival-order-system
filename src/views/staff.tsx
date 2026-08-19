@@ -17,7 +17,6 @@ return pageDocument({
     <div class="brand"><div class="brand-mark" aria-hidden="true">注</div><div><div class="brand-kicker">FESTIVAL ORDER SYSTEM</div><h1>注文受付</h1></div></div>
     <div class="topbar-actions">
       <span class="current-time">${formatDateTime(new Date())}</span>
-      <a href="/account/password" class="btn" style="text-decoration:none">パスワード変更</a>
       <form method="POST" action="/logout" style="display:inline"><button type="submit" class="btn">ログアウト</button></form>
     </div>
   </header>

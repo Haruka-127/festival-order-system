@@ -210,7 +210,7 @@ return pageDocument({
                       </form>
                       <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/password">
                         <label>新しいパスワード</label><input type="password" name="password" minlength="10" required placeholder="10文字以上">
-                        <button type="submit" class="btn btn-sm">パスワードをリセット</button>
+                        <button type="submit" class="btn btn-sm">パスワードを変更</button>
                       </form>
                       <form method="POST" action="/api/admin/users/${encodeURIComponent(u.id)}/delete" data-confirm-delete-user><button type="submit" class="btn btn-sm btn-danger">スタッフを削除</button></form>
                       <div class="dialog-footer"><button type="button" class="btn btn-sm" data-close-dialog>閉じる</button></div>

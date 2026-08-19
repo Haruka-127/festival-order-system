@@ -28,6 +28,7 @@ describe("server-rendered views", () => {
     expect(html).toContain('id="cart-items" aria-live="polite"');
     expect(html).toContain('id="menu-grid"');
     expect(html).toContain('id="order-list"');
+    expect(html).not.toContain('href="/account/password"');
     const client = await source("../src/client/staff.js");
     expect(client).toContain("sessionStorage.getItem('staff-order-draft')");
     expect(client).toContain("fetch('/api/staff/items')");
@@ -57,6 +58,8 @@ describe("server-rendered views", () => {
     expect(html).toContain('href="/admin/settings/advanced"');
     expect(html).toContain('data-open-dialog="item-editor-1"');
     expect(html).toContain('id="user-editor-staff-id" class="editor-dialog"');
+    expect(html).toContain('action="/api/admin/users/staff-id/password"');
+    expect(html).toContain('パスワードを変更</button>');
     expect(html).toContain('id="location-editor-1" class="editor-dialog"');
     const client = await source("../src/client/admin.ts");
     expect(client).toContain("showModal()");
