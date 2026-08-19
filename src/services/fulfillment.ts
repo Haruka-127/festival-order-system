@@ -1,9 +1,11 @@
 import type { Database } from "bun:sqlite";
 import { getAll, getDb, getOne, runSql } from "../db/database";
+import { utcNowIso } from "./time";
 
 export type MonitorEntry = {
   fulfillment_id: string;
   display_number: number;
+  display_number_date: string;
   created_at: string;
   ready_at?: string | null;
 };
@@ -37,7 +39,10 @@ export function getMonitorBoard(db = getDb()): MonitorBoard {
     db,
     `SELECT id, name, sort_order
      FROM fulfillment_locations
-     WHERE active = 1
+     WHERE active = 1 OR EXISTS (
+       SELECT 1 FROM order_fulfillments f
+       WHERE f.location_id = fulfillment_locations.id AND f.status IN ('preparing', 'ready')
+     )
      ORDER BY sort_order ASC, id ASC`,
   );
   const rows = getAll<{
@@ -45,17 +50,17 @@ export function getMonitorBoard(db = getDb()): MonitorBoard {
     location_id: number;
     status: "preparing" | "ready";
     display_number: number;
+    display_number_date: string;
     created_at: string;
     ready_at: string | null;
   }>(
     db,
-    `SELECT f.id AS fulfillment_id, f.location_id, f.status, o.display_number,
+    `SELECT f.id AS fulfillment_id, f.location_id, f.status, o.display_number, o.display_number_date,
             f.created_at, f.ready_at
      FROM order_fulfillments f
      JOIN orders o ON o.id = f.order_id
      JOIN fulfillment_locations l ON l.id = f.location_id
-     WHERE l.active = 1
-       AND f.status IN ('preparing', 'ready')
+     WHERE f.status IN ('preparing', 'ready')
        AND o.status != 'cancelled'
      ORDER BY l.sort_order ASC, l.id ASC,
               CASE f.status WHEN 'preparing' THEN f.created_at ELSE f.ready_at END ASC,
@@ -70,6 +75,7 @@ export function getMonitorBoard(db = getDb()): MonitorBoard {
     const entry: MonitorEntry = {
       fulfillment_id: row.fulfillment_id,
       display_number: row.display_number,
+      display_number_date: row.display_number_date,
       created_at: row.created_at,
       ready_at: row.ready_at,
     };
@@ -146,7 +152,7 @@ export function recomputeOrderStatus(db: Database, orderId: string): string {
   let nextStatus = "preparing";
   if (total > 0 && (counts?.handed_over ?? 0) + (counts?.cancelled ?? 0) === total) nextStatus = "delivered";
   else if (total > 0 && (counts?.preparing ?? 0) === 0) nextStatus = "available";
-  runSql(db, "UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", nextStatus, orderId);
+  runSql(db, "UPDATE orders SET status = ?, updated_at = ? WHERE id = ?", nextStatus, utcNowIso(), orderId);
   return nextStatus;
 }
 

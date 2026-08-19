@@ -7,6 +7,8 @@ import { getCustomerOrderByToken, getMonitorBoard } from "../services/fulfillmen
 import { wsManager } from "../services/websocket";
 import { getProviderTasks } from "./provider";
 import { staffPage, type CashierOrder } from "../views/staff";
+import { recordAuditEvent } from "../services/audit";
+import { utcNowIso } from "../services/time";
 
 type RequestedItem = { item_id: number; quantity: number };
 type ItemRow = {
@@ -21,9 +23,13 @@ type ItemRow = {
   daily_limit: number | null;
 };
 
-function requireCashier(user: UserInfo | null): UserInfo | Response {
-  if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
-  if (user.role !== "admin" && user.role !== "cashier") return new Response("アクセス権限がありません", { status: 403 });
+function requireCashier(user: UserInfo | null, api = false): UserInfo | Response {
+  if (!user) return api
+    ? new Response(JSON.stringify({ error: "authentication_required" }), { status: 401, headers: { "Content-Type": "application/json; charset=utf-8" } })
+    : new Response(null, { status: 302, headers: { Location: "/login" } });
+  if (user.role !== "admin" && user.role !== "cashier") return api
+    ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "Content-Type": "application/json; charset=utf-8" } })
+    : new Response("アクセス権限がありません", { status: 403 });
   return user;
 }
 
@@ -51,9 +57,9 @@ function isWithinOrderingHours(openTime: string | null, closeTime: string | null
 
 export function getCashierOrders(): CashierOrder[] {
   const db = getDb();
-  const orders = getAll<{ id: string; display_number: number; status: string; created_at: string }>(
+  const orders = getAll<{ id: string; display_number: number; display_number_date: string; status: string; created_at: string }>(
     db,
-    `SELECT id, display_number, status, created_at FROM orders
+    `SELECT id, display_number, display_number_date, status, created_at FROM orders
      WHERE status IN ('preparing', 'available') ORDER BY created_at DESC`,
   );
   const fulfillments = getAll<{ id: string; order_id: string; location_name: string; status: string }>(
@@ -89,22 +95,25 @@ export function getCashierOrders(): CashierOrder[] {
   return orders.map(order => ({ ...order, fulfillments: fulfillmentMap.get(order.id) ?? [] }));
 }
 
+export function getStaffItems() {
+  return getAll<{ id: number; name: string; sold_out: number; sort_order: number; location_name: string; max_quantity_per_order: number | null }>(
+    getDb(),
+    `SELECT i.id, i.name, i.sold_out, i.sort_order, l.name AS location_name, i.max_quantity_per_order
+     FROM items i JOIN fulfillment_locations l ON l.id = i.fulfillment_location_id
+     WHERE i.active = 1 AND l.active = 1 ORDER BY i.sort_order ASC, i.id ASC`,
+  );
+}
+
 export const staffRoutes = new Elysia()
   .use(authMiddleware)
   .get("/staff", (context) => {
     const user = requireCashier(context.getUser());
     if (user instanceof Response) return user;
     const { securityNonce } = context as typeof context & { securityNonce: string };
-    const items = getAll<{ id: number; name: string; sold_out: number; sort_order: number; location_name: string; max_quantity_per_order: number | null }>(
-      getDb(),
-      `SELECT i.id, i.name, i.sold_out, i.sort_order, l.name AS location_name, i.max_quantity_per_order
-       FROM items i JOIN fulfillment_locations l ON l.id = i.fulfillment_location_id
-       WHERE i.active = 1 AND l.active = 1 ORDER BY i.sort_order ASC, i.id ASC`,
-    );
-    return new Response(staffPage(items, getCashierOrders(), securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(staffPage(getStaffItems(), getCashierOrders(), securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .post("/api/staff/orders", ({ body, set, getUser }) => {
-    const user = requireCashier(getUser());
+    const user = requireCashier(getUser(), true);
     if (user instanceof Response) return user;
     const payload = (body ?? {}) as { items?: RequestedItem[]; client_request_id?: string };
     const items = payload.items;
@@ -123,14 +132,14 @@ export const staffRoutes = new Elysia()
 
     const db = getDb();
     if (payload.client_request_id) {
-      const existing = getOne<{ id: string; display_number: number; token: string }>(db, "SELECT id, display_number, token FROM orders WHERE client_request_id = ?", payload.client_request_id);
+      const existing = getOne<{ id: string; display_number: number; token: string }>(db, "SELECT id, display_number, token FROM orders WHERE created_by = ? AND client_request_id = ?", user.id, payload.client_request_id);
       if (existing) return { ...existing, display_number_padded: config.displayNumberPad(existing.display_number), duplicated: true };
     }
 
     const orderId = crypto.randomUUID();
     const token = generateToken();
     const date = todayDate();
-    const now = new Date().toISOString();
+    const now = utcNowIso();
     const affectedLocations = new Set<number>();
 
     const createOrder = db.transaction(() => {
@@ -192,7 +201,7 @@ export const staffRoutes = new Elysia()
       }
 
       const displayNumber = reserveDisplayNumber(db, date);
-      runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token, created_at, updated_at, client_request_id) VALUES (?, ?, ?, 'preparing', ?, ?, ?, ?)", orderId, displayNumber, date, token, now, now, payload.client_request_id ?? null);
+      runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token, created_at, updated_at, client_request_id, created_by) VALUES (?, ?, ?, 'preparing', ?, ?, ?, ?, ?)", orderId, displayNumber, date, token, now, now, payload.client_request_id ?? null, user.id);
 
       const fulfillmentIds = new Map<number, string>();
       for (const locationId of locationQuantities.keys()) {
@@ -208,12 +217,29 @@ export const staffRoutes = new Elysia()
         runSql(db, `INSERT INTO daily_item_usage (usage_date, item_id, reserved_quantity, updated_at) VALUES (?, ?, ?, datetime('now'))
                     ON CONFLICT(usage_date, item_id) DO UPDATE SET reserved_quantity = reserved_quantity + excluded.reserved_quantity, updated_at = datetime('now')`, date, row.id, requested.quantity);
       }
+      recordAuditEvent(db, {
+        orderId,
+        displayNumber,
+        displayNumberDate: date,
+        eventType: "order_created",
+        toStatus: "preparing",
+        actorUserId: user.id,
+        actorUsername: user.username,
+        details: { itemKinds: items.length, totalQuantity },
+      });
       return displayNumber;
     });
 
     let displayNumber: number;
     try { displayNumber = createOrder(); }
-    catch (error) { set.status = 409; return { error: error instanceof Error ? error.message : "注文を作成できませんでした" }; }
+    catch (error) {
+      if (payload.client_request_id) {
+        const existing = getOne<{ id: string; display_number: number; token: string }>(db, "SELECT id, display_number, token FROM orders WHERE created_by = ? AND client_request_id = ?", user.id, payload.client_request_id);
+        if (existing) return { ...existing, display_number_padded: config.displayNumberPad(existing.display_number), duplicated: true };
+      }
+      set.status = 409;
+      return { error: error instanceof Error ? error.message : "注文を作成できませんでした" };
+    }
 
     for (const locationId of affectedLocations) wsManager.broadcastToProvider(locationId, { tasks: getProviderTasks(locationId) });
     wsManager.broadcastToMonitor(getMonitorBoard());
@@ -221,20 +247,24 @@ export const staffRoutes = new Elysia()
     return { id: orderId, display_number: displayNumber, display_number_padded: config.displayNumberPad(displayNumber), token };
   })
   .patch("/api/staff/orders/:id/status", ({ params: { id }, body, set, getUser }) => {
-    const user = requireCashier(getUser());
+    const user = requireCashier(getUser(), true);
     if (user instanceof Response) return user;
-    const { status } = (body ?? {}) as { status?: string };
+    const { status, reason } = (body ?? {}) as { status?: string; reason?: string };
     if (status !== "cancelled") { set.status = 400; return { error: "受付画面から変更できるのはキャンセルだけです" }; }
+    const cancellationReason = typeof reason === "string" ? reason.trim() : "";
+    if (!cancellationReason || cancellationReason.length > 200) { set.status = 400; return { error: "200文字以内のキャンセル理由を入力してください" }; }
     const db = getDb();
-    const order = getOne<{ status: string; display_number_date: string; token: string }>(db, "SELECT status, display_number_date, token FROM orders WHERE id = ?", id);
+    const order = getOne<{ status: string; display_number: number; display_number_date: string; token: string }>(db, "SELECT status, display_number, display_number_date, token FROM orders WHERE id = ?", id);
     if (!order) { set.status = 404; return { error: "注文が見つかりません" }; }
     if (!["preparing", "available"].includes(order.status)) { set.status = 409; return { error: "この注文はキャンセルできません" }; }
     const locations = getAll<{ location_id: number }>(db, "SELECT DISTINCT location_id FROM order_fulfillments WHERE order_id = ?", id);
     const cancelOrder = db.transaction(() => {
       const changed = runSql(db, "UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND status = ?", id, order.status);
-      if (changed.changes !== 1) throw new Error("注文が別の端末で更新されました");
       const tasks = getAll<{ id: string; status: string }>(db, "SELECT id, status FROM order_fulfillments WHERE order_id = ? AND status != 'cancelled'", id);
-      const refundableFulfillments = new Set(tasks.filter(task => task.status !== "handed_over").map(task => task.id));
+      if (tasks.some(task => task.status === "handed_over")) throw new Error("受け渡し済みの商品があるため、注文全体はキャンセルできません");
+      if (changed.changes !== 1) throw new Error("注文が別の端末で更新されました");
+      runSql(db, "UPDATE orders SET cancelled_by = ?, cancellation_reason = ?, cancelled_at = ?, updated_at = ? WHERE id = ?", user.id, cancellationReason, utcNowIso(), utcNowIso(), id);
+      const refundableFulfillments = new Set(tasks.map(task => task.id));
       for (const task of tasks) {
         runSql(db, "UPDATE order_fulfillments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?", task.id);
         runSql(db, "INSERT INTO fulfillment_events (fulfillment_id, from_status, to_status, changed_by) VALUES (?, ?, 'cancelled', ?)", task.id, task.status, user.id);
@@ -247,6 +277,17 @@ export const staffRoutes = new Elysia()
       for (const item of orderedItems) {
         if (refundableFulfillments.has(item.fulfillment_id)) runSql(db, "UPDATE daily_item_usage SET reserved_quantity = MAX(0, reserved_quantity - ?), updated_at = datetime('now') WHERE usage_date = ? AND item_id = ?", item.quantity, order.display_number_date, item.item_id);
       }
+      recordAuditEvent(db, {
+        orderId: id,
+        displayNumber: order.display_number,
+        displayNumberDate: order.display_number_date,
+        eventType: "order_cancelled",
+        fromStatus: order.status,
+        toStatus: "cancelled",
+        actorUserId: user.id,
+        actorUsername: user.username,
+        details: { reason: cancellationReason },
+      });
     });
     try { cancelOrder(); }
     catch (error) { set.status = 409; return { error: error instanceof Error ? error.message : "注文をキャンセルできませんでした" }; }
@@ -257,7 +298,12 @@ export const staffRoutes = new Elysia()
     return { status: "cancelled" };
   })
   .get("/api/staff/orders", ({ getUser }) => {
-    const user = requireCashier(getUser());
+    const user = requireCashier(getUser(), true);
     if (user instanceof Response) return user;
     return getCashierOrders();
+  })
+  .get("/api/staff/items", ({ getUser }) => {
+    const user = requireCashier(getUser(), true);
+    if (user instanceof Response) return user;
+    return getStaffItems();
   });

@@ -11,12 +11,24 @@ export function getDb(): Database {
     const path = config.dbPath();
     mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
     chmodSync(config.dataDir, 0o700);
-    db = new Database(path);
-    db.exec("PRAGMA journal_mode = WAL;");
-    db.exec("PRAGMA foreign_keys = ON;");
-    initSchema(db);
-    for (const databaseFile of [path, `${path}-wal`, `${path}-shm`]) {
-      if (existsSync(databaseFile)) chmodSync(databaseFile, 0o600);
+    const opened = new Database(path);
+    db = opened;
+    try {
+      opened.exec("PRAGMA journal_mode = WAL;");
+      opened.exec("PRAGMA foreign_keys = ON;");
+      opened.exec("PRAGMA busy_timeout = 5000;");
+      opened.exec("PRAGMA synchronous = NORMAL;");
+      opened.exec("PRAGMA wal_autocheckpoint = 1000;");
+      opened.transaction(() => initSchema(opened))();
+      const integrity = opened.prepare<{ quick_check: string }, []>("PRAGMA quick_check(1)").get();
+      if (integrity?.quick_check !== "ok") throw new Error(`Database integrity check failed: ${integrity?.quick_check ?? "unknown"}`);
+      for (const databaseFile of [path, `${path}-wal`, `${path}-shm`]) {
+        if (existsSync(databaseFile)) chmodSync(databaseFile, 0o600);
+      }
+    } catch (error) {
+      try { opened.close(); } catch {}
+      db = null;
+      throw error;
     }
   }
   return db;
@@ -95,6 +107,7 @@ function initSchema(db: Database) {
 
     CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
     CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(display_number_date);
+    CREATE INDEX IF NOT EXISTS idx_orders_status_updated ON orders(status, updated_at);
     CREATE INDEX IF NOT EXISTS idx_orders_token ON orders(token);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_session_flash_messages_session
@@ -154,6 +167,18 @@ function migrateMultiLocationSchema(db: Database): void {
   if (!hasColumn(db, "orders", "client_request_id")) {
     db.exec("ALTER TABLE orders ADD COLUMN client_request_id TEXT;");
   }
+  if (!hasColumn(db, "orders", "created_by")) {
+    db.exec("ALTER TABLE orders ADD COLUMN created_by TEXT REFERENCES users(id) ON DELETE SET NULL;");
+  }
+  if (!hasColumn(db, "orders", "cancelled_by")) {
+    db.exec("ALTER TABLE orders ADD COLUMN cancelled_by TEXT REFERENCES users(id) ON DELETE SET NULL;");
+  }
+  if (!hasColumn(db, "orders", "cancellation_reason")) {
+    db.exec("ALTER TABLE orders ADD COLUMN cancellation_reason TEXT;");
+  }
+  if (!hasColumn(db, "orders", "cancelled_at")) {
+    db.exec("ALTER TABLE orders ADD COLUMN cancelled_at TEXT;");
+  }
   if (!hasColumn(db, "order_items", "fulfillment_id")) {
     db.exec("ALTER TABLE order_items ADD COLUMN fulfillment_id TEXT;");
   }
@@ -198,13 +223,32 @@ function migrateMultiLocationSchema(db: Database): void {
       daily_order_limit INTEGER CHECK(daily_order_limit IS NULL OR daily_order_limit > 0),
       max_items_per_order INTEGER NOT NULL DEFAULT 50 CHECK(max_items_per_order > 0),
       max_total_quantity INTEGER NOT NULL DEFAULT 500 CHECK(max_total_quantity > 0),
+      completed_order_retention_days INTEGER NOT NULL DEFAULT 7 CHECK(completed_order_retention_days BETWEEN 1 AND 3650),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id TEXT,
+      fulfillment_id TEXT,
+      display_number INTEGER,
+      display_number_date TEXT,
+      location_name TEXT,
+      event_type TEXT NOT NULL CHECK(event_type IN ('order_created', 'order_cancelled', 'fulfillment_status', 'orders_cleaned')),
+      from_status TEXT,
+      to_status TEXT,
+      actor_user_id TEXT,
+      actor_username TEXT,
+      details TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
 
     INSERT OR IGNORE INTO app_settings (id) VALUES (1);
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_client_request_id
-      ON orders(client_request_id) WHERE client_request_id IS NOT NULL;
+    DROP INDEX IF EXISTS idx_orders_client_request_id;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_creator_request_id
+      ON orders(created_by, client_request_id)
+      WHERE created_by IS NOT NULL AND client_request_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_fulfillments_location_status_created
       ON order_fulfillments(location_id, status, created_at);
     CREATE INDEX IF NOT EXISTS idx_fulfillments_order
@@ -213,7 +257,15 @@ function migrateMultiLocationSchema(db: Database): void {
       ON order_items(fulfillment_id);
     CREATE INDEX IF NOT EXISTS idx_fulfillment_events_fulfillment
       ON fulfillment_events(fulfillment_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_created
+      ON audit_events(created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_order
+      ON audit_events(order_id, created_at);
   `);
+
+  if (!hasColumn(db, "app_settings", "completed_order_retention_days")) {
+    db.exec("ALTER TABLE app_settings ADD COLUMN completed_order_retention_days INTEGER NOT NULL DEFAULT 7 CHECK(completed_order_retention_days BETWEEN 1 AND 3650);");
+  }
 
   if (schemaVersion < 1) {
     db.exec(`
@@ -249,13 +301,47 @@ function migrateMultiLocationSchema(db: Database): void {
       PRAGMA user_version = 1;
     `);
   }
-  if (schemaVersion < 2) {
-    db.exec("PRAGMA user_version = 2;");
+  if (schemaVersion < 3) {
+    db.exec(`
+      INSERT INTO audit_events (
+        order_id, fulfillment_id, display_number, display_number_date, location_name,
+        event_type, from_status, to_status, actor_user_id, actor_username, created_at
+      )
+      SELECT f.order_id, e.fulfillment_id, o.display_number, o.display_number_date, l.name,
+             'fulfillment_status', e.from_status, e.to_status, e.changed_by, u.username,
+             CASE
+               WHEN instr(e.created_at, 'T') > 0 THEN e.created_at
+               ELSE replace(e.created_at, ' ', 'T') || 'Z'
+             END
+      FROM fulfillment_events e
+      JOIN order_fulfillments f ON f.id = e.fulfillment_id
+      JOIN orders o ON o.id = f.order_id
+      JOIN fulfillment_locations l ON l.id = f.location_id
+      LEFT JOIN users u ON u.id = e.changed_by
+      WHERE NOT EXISTS (
+        SELECT 1 FROM audit_events a
+        WHERE a.fulfillment_id = e.fulfillment_id
+          AND a.event_type = 'fulfillment_status'
+          AND COALESCE(a.from_status, '') = COALESCE(e.from_status, '')
+          AND a.to_status = e.to_status
+          AND a.created_at = CASE
+            WHEN instr(e.created_at, 'T') > 0 THEN e.created_at
+            ELSE replace(e.created_at, ' ', 'T') || 'Z'
+          END
+      );
+    `);
+    db.exec("PRAGMA user_version = 3;");
   }
+}
+
+export function checkDatabaseReady(db = getDb()): boolean {
+  const row = db.prepare<{ ok: number }, []>("SELECT 1 AS ok").get();
+  return row?.ok === 1;
 }
 
 export function closeDb() {
   if (db) {
+    try { db.exec("PRAGMA wal_checkpoint(PASSIVE);"); } catch {}
     db.close();
     db = null;
   }

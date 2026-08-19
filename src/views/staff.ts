@@ -1,9 +1,12 @@
 import { config } from "../config";
+import { formatDateTime } from "../services/time";
+import { todayDate } from "../services/numbering";
 
 type Item = { id: number; name: string; sold_out: number; sort_order: number; location_name?: string; max_quantity_per_order?: number | null };
 export type CashierOrder = {
   id: string;
   display_number: number;
+  display_number_date?: string;
   status: string;
   created_at: string;
   fulfillments?: { id: string; location_name: string; status: string; items: { name: string; quantity: number }[] }[];
@@ -119,7 +122,8 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
   <header class="topbar">
     <div class="brand"><div class="brand-mark" aria-hidden="true">注</div><div><div class="brand-kicker">FESTIVAL ORDER SYSTEM</div><h1>注文受付</h1></div></div>
     <div class="topbar-actions">
-      <span class="current-time">${new Date().toLocaleString("ja-JP")}</span>
+      <span class="current-time">${formatDateTime(new Date())}</span>
+      <a href="/account/password" class="btn" style="text-decoration:none">パスワード変更</a>
       <form method="POST" action="/logout" style="display:inline"><button type="submit" class="btn">ログアウト</button></form>
     </div>
   </header>
@@ -165,11 +169,11 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
     <div class="orders-panel">
       <div class="panel-heading">
         <div><div class="panel-kicker">ORDER STATUS</div><h2>現在の注文</h2></div>
-        <div class="tabs" id="order-tabs" role="tablist" aria-label="注文状態で絞り込み">
+        <div><div id="last-updated" class="panel-note">更新確認中</div><div class="tabs" id="order-tabs" role="tablist" aria-label="注文状態で絞り込み">
           <button class="tab active" data-filter="all" role="tab" aria-selected="true">すべて</button>
           <button class="tab" data-filter="preparing" role="tab" aria-selected="false">準備中</button>
           <button class="tab" data-filter="available" role="tab" aria-selected="false">提供可能</button>
-        </div>
+        </div></div>
       </div>
       <div id="order-list">
         ${orders.length === 0 ? '<div class="empty-orders">現在、注文はありません</div>' : orders.map(order => orderCard(order)).join("")}
@@ -185,8 +189,13 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
   <div id="toast-container"></div>
 
   <script nonce="${securityNonce}">
-    const cart = new Map();
+    let savedDraft = null;
+    try { savedDraft = JSON.parse(sessionStorage.getItem('staff-order-draft') || 'null'); } catch {}
+    const cart = new Map(Array.isArray(savedDraft?.items) ? savedDraft.items : []);
     let submitting = false;
+    let pendingRequestId = savedDraft?.requestId || null;
+    let pendingPayloadSignature = savedDraft?.signature || '';
+    const currentDate = ${JSON.stringify(todayDate())};
 
     function escapeHtml(s) {
       return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -196,6 +205,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
       if (submitting) return;
       const current = cart.get(id) || 0;
       cart.set(id, current + 1);
+      invalidatePendingRequest();
       updateCart();
     }
 
@@ -207,7 +217,19 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
       } else {
         cart.set(id, next);
       }
+      invalidatePendingRequest();
       updateCart();
+    }
+
+    function invalidatePendingRequest() {
+      pendingRequestId = null;
+      pendingPayloadSignature = '';
+      saveDraft();
+    }
+
+    function saveDraft() {
+      if (cart.size === 0 && !pendingRequestId) { sessionStorage.removeItem('staff-order-draft'); return; }
+      sessionStorage.setItem('staff-order-draft', JSON.stringify({ items: [...cart.entries()], requestId: pendingRequestId, signature: pendingPayloadSignature }));
     }
 
     function updateCart() {
@@ -264,12 +286,19 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
 
       try {
         const items = entries.map(([id, qty]) => ({ item_id: id, quantity: qty }));
-        const clientRequestId = crypto.randomUUID();
+        const signature = JSON.stringify(items);
+        if (!pendingRequestId || pendingPayloadSignature !== signature) {
+          pendingRequestId = crypto.randomUUID();
+          pendingPayloadSignature = signature;
+          saveDraft();
+        }
         const res = await fetch('/api/staff/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items, client_request_id: clientRequestId }),
+          body: JSON.stringify({ items, client_request_id: pendingRequestId }),
         });
+
+        if (res.status === 401) { location.href = '/login'; return; }
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: 'エラーが発生しました' }));
@@ -279,6 +308,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
 
         const data = await res.json();
         cart.clear();
+        invalidatePendingRequest();
         updateCart();
 
         // Show result modal
@@ -313,6 +343,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
     }
 
     document.addEventListener('keydown', function(e) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       const modal = document.getElementById('modal');
       if (modal.style.display === 'flex') {
         if (e.key === 'Enter') { closeModal(); }
@@ -365,12 +396,20 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
     }
 
     async function updateOrderStatus(orderId, status) {
+      if (status !== 'cancelled') return;
+      if (!confirm('この注文全体をキャンセルしますか？')) return;
+      const reason = prompt('キャンセル理由を入力してください（200文字以内）', 'お客様都合');
+      if (reason === null) return;
+      if (!reason.trim() || reason.trim().length > 200) { showToast('キャンセル理由を200文字以内で入力してください'); return; }
+      const buttons = document.querySelectorAll('button[data-order-id="' + CSS.escape(orderId) + '"]');
+      buttons.forEach(button => button.disabled = true);
       try {
         const res = await fetch('/api/staff/orders/' + orderId + '/status', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status }),
+          body: JSON.stringify({ status, reason: reason.trim() }),
         });
+        if (res.status === 401) { location.href = '/login'; return; }
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: 'エラー' }));
           showToast(err.error || '操作に失敗しました');
@@ -379,12 +418,15 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
         refreshOrders();
       } catch (e) {
         showToast('通信エラーが発生しました');
+      } finally {
+        buttons.forEach(button => button.disabled = false);
       }
     }
 
     async function refreshOrders() {
       try {
         const res = await fetch('/api/staff/orders');
+        if (res.status === 401) { location.href = '/login'; return; }
         if (!res.ok) return;
         const data = await res.json();
         const container = document.getElementById('order-list');
@@ -394,6 +436,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
         }
         container.innerHTML = data.map(o => {
           const orderId = escapeHtml(String(o.id));
+          const previousDate = o.display_number_date && o.display_number_date !== currentDate ? '<span class="panel-note">' + escapeHtml(o.display_number_date) + '受付</span>' : '';
           const displayFulfillments = o.fulfillments || [{ id: o.id, location_name: '既定提供場所', status: o.status === 'available' ? 'ready' : o.status, items: o.items || [] }];
           const fulfillmentHtml = displayFulfillments.map(f => {
             const label = f.status === 'preparing' ? '準備中' : f.status === 'ready' ? '提供可能' : f.status === 'handed_over' ? '受渡済' : 'キャンセル';
@@ -405,21 +448,49 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
           const actions = '<button class="btn-cancel" data-order-id="' + orderId + '" data-order-status="cancelled">注文をキャンセル</button>';
           return '<div class="order-card' + (o.status === 'available' ? ' available' : '') + '" data-status="' + o.status + '">' +
             '<div class="order-header">' +
-            '<span class="order-num">' + padNum(o.display_number) + '</span>' +
+            '<span class="order-num">' + padNum(o.display_number) + '</span>' + previousDate +
             '<span class="badge ' + statusClass + '">' + statusLabel + '</span>' +
             '</div>' +
             '<div class="order-items">' + fulfillmentHtml + '</div>' +
             '<div class="order-actions">' + actions + '</div>' +
             '</div>';
         }).join('');
+        document.getElementById('last-updated').textContent = '最終更新 ' + new Date().toLocaleTimeString('ja-JP');
         applyOrderFilter();
       } catch (e) {
         // silent
       }
     }
 
+    async function refreshItems() {
+      try {
+        const res = await fetch('/api/staff/items');
+        if (res.status === 401) { location.href = '/login'; return; }
+        if (!res.ok) return;
+        const items = await res.json();
+        const orderableIds = new Set(items.filter(item => !item.sold_out).map(item => item.id));
+        let removed = false;
+        for (const id of [...cart.keys()]) {
+          if (!orderableIds.has(id)) { cart.delete(id); removed = true; }
+        }
+        if (removed) { invalidatePendingRequest(); showToast('販売状態が変わった商品をカートから外しました'); }
+        const grid = document.getElementById('menu-grid');
+        grid.innerHTML = items.map((item, index) => {
+          const key = index < 9 ? index + 1 : 0;
+          return '<button class="menu-btn ' + (item.sold_out ? 'sold-out' : '') + '" data-id="' + item.id + '" data-name="' + escapeHtml(item.name) + '" data-key="' + key + '" data-add-item-id="' + item.id + '" ' + (item.sold_out ? 'disabled' : '') + '>' +
+            '<span class="key-hint">' + key + '</span>' + escapeHtml(item.name) +
+            '<span class="item-location">' + escapeHtml(item.location_name || '既定提供場所') + '</span>' +
+            (item.sold_out ? '<span class="soldout-label">売り切れ</span>' : '') +
+            '<span class="cart-badge" id="badge-' + item.id + '" style="display:none">0</span></button>';
+        }).join('');
+        updateCart();
+        filterItems(document.getElementById('item-search').value);
+      } catch { document.getElementById('last-updated').textContent = '通信を再確認中'; }
+    }
+
     // Poll for order updates
     setInterval(refreshOrders, 5000);
+    setInterval(refreshItems, 5000);
 
     document.addEventListener('click', event => {
       const button = event.target.closest('button');
@@ -433,6 +504,7 @@ export function staffPage(items: Item[], orders: CashierOrder[], securityNonce =
     });
 
     document.getElementById('item-search').addEventListener('input', event => filterItems(event.target.value));
+    updateCart();
   </script>
 </body>
 </html>`;
@@ -464,6 +536,7 @@ function orderCard(order: CashierOrder): string {
   return `<div class="order-card${order.status === "available" ? " available" : ""}" data-status="${order.status}">
     <div class="order-header">
       <span class="order-num">${config.displayNumberPad(order.display_number)}</span>
+      ${order.display_number_date && order.display_number_date !== todayDate() ? `<span class="panel-note">${escapeHtml(order.display_number_date)}受付</span>` : ""}
       <span class="badge ${statusClass}">${statusLabel}</span>
     </div>
     <div class="order-items">${fulfillmentHtml}</div>

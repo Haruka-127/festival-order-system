@@ -5,28 +5,39 @@ import { isValidWebSocketOrigin } from "../security";
 import { getCustomerOrderByToken, getMonitorBoard, recomputeOrderStatus } from "../services/fulfillment";
 import { wsManager } from "../services/websocket";
 import { providerPage, type ProviderTask } from "../views/provider";
+import { recordAuditEvent } from "../services/audit";
+import { utcNowIso } from "../services/time";
 
-function requireProvider(user: UserInfo | null): UserInfo | Response {
-  if (!user) return new Response(null, { status: 302, headers: { Location: "/login" } });
-  if (user.role !== "provider" || !user.fulfillmentLocationId) return new Response("アクセス権限がありません", { status: 403 });
+function requireProvider(user: UserInfo | null, api = false): UserInfo | Response {
+  if (!user) return api
+    ? new Response(JSON.stringify({ error: "authentication_required" }), { status: 401, headers: { "Content-Type": "application/json; charset=utf-8" } })
+    : new Response(null, { status: 302, headers: { Location: "/login" } });
+  if (user.role !== "provider" || !user.fulfillmentLocationId) return api
+    ? new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "Content-Type": "application/json; charset=utf-8" } })
+    : new Response("アクセス権限がありません", { status: 403 });
   return user;
 }
 
 export function getProviderTasks(locationId: number): ProviderTask[] {
   const db = getDb();
-  const tasks = getAll<{ id: string; display_number: number; status: string; created_at: string }>(
+  const tasks = getAll<{ id: string; display_number: number; display_number_date: string; status: string; created_at: string; handed_over_at: string | null }>(
     db,
-    `SELECT f.id, o.display_number, f.status, f.created_at
+    `SELECT f.id, o.display_number, o.display_number_date, f.status, f.created_at, f.handed_over_at
      FROM order_fulfillments f JOIN orders o ON o.id = f.order_id
-     WHERE f.location_id = ? AND f.status IN ('preparing', 'ready') AND o.status != 'cancelled'
-     ORDER BY CASE f.status WHEN 'ready' THEN 0 ELSE 1 END,
+     WHERE f.location_id = ?
+       AND (f.status IN ('preparing', 'ready') OR (f.status = 'handed_over' AND julianday(f.handed_over_at) >= julianday('now', '-2 minutes')))
+       AND o.status != 'cancelled'
+     ORDER BY CASE f.status WHEN 'ready' THEN 0 WHEN 'preparing' THEN 1 ELSE 2 END,
               COALESCE(f.ready_at, f.created_at) ASC`,
     locationId,
   );
   const items = getAll<{ fulfillment_id: string; name: string; quantity: number }>(
     db,
     `SELECT fulfillment_id, item_name AS name, quantity FROM order_items
-     WHERE fulfillment_id IN (SELECT id FROM order_fulfillments WHERE location_id = ? AND status IN ('preparing', 'ready'))
+     WHERE fulfillment_id IN (
+       SELECT id FROM order_fulfillments
+       WHERE location_id = ? AND (status IN ('preparing', 'ready') OR (status = 'handed_over' AND julianday(handed_over_at) >= julianday('now', '-2 minutes')))
+     )
      ORDER BY id ASC`,
     locationId,
   );
@@ -50,12 +61,12 @@ export const providerRoutes = new Elysia()
     });
   })
   .get("/api/provider/fulfillments", ({ getUser }) => {
-    const user = requireProvider(getUser());
+    const user = requireProvider(getUser(), true);
     if (user instanceof Response) return user;
     return getProviderTasks(user.fulfillmentLocationId!);
   })
   .patch("/api/provider/fulfillments/:id/status", ({ params: { id }, body, set, getUser }) => {
-    const user = requireProvider(getUser());
+    const user = requireProvider(getUser(), true);
     if (user instanceof Response) return user;
     const { status } = (body ?? {}) as { status?: string };
     if (!status || !["preparing", "ready", "handed_over"].includes(status)) {
@@ -63,10 +74,11 @@ export const providerRoutes = new Elysia()
       return { error: "不正な状態です" };
     }
     const db = getDb();
-    const task = getOne<{ order_id: string; status: string; token: string }>(
+    const task = getOne<{ order_id: string; status: string; token: string; display_number: number; display_number_date: string; location_name: string }>(
       db,
-      `SELECT f.order_id, f.status, o.token
+      `SELECT f.order_id, f.status, o.token, o.display_number, o.display_number_date, l.name AS location_name
        FROM order_fulfillments f JOIN orders o ON o.id = f.order_id
+       JOIN fulfillment_locations l ON l.id = f.location_id
        WHERE f.id = ? AND f.location_id = ?`,
       id, user.fulfillmentLocationId!,
     );
@@ -78,18 +90,31 @@ export const providerRoutes = new Elysia()
     };
     if (!allowed[task.status]?.includes(status)) { set.status = 409; return { error: "許可されていない状態変更です" }; }
 
+    const now = utcNowIso();
     const update = db.transaction(() => {
       const result = runSql(
         db,
         `UPDATE order_fulfillments SET status = ?,
-           ready_at = CASE WHEN ? = 'ready' THEN datetime('now') WHEN ? = 'preparing' THEN NULL ELSE ready_at END,
-           handed_over_at = CASE WHEN ? = 'handed_over' THEN datetime('now') ELSE NULL END,
-           updated_at = datetime('now')
+           ready_at = CASE WHEN ? = 'ready' THEN ? WHEN ? = 'preparing' THEN NULL ELSE ready_at END,
+           handed_over_at = CASE WHEN ? = 'handed_over' THEN ? ELSE NULL END,
+           updated_at = ?
          WHERE id = ? AND location_id = ? AND status = ?`,
-        status, status, status, status, id, user.fulfillmentLocationId!, task.status,
+        status, status, now, status, status, now, now, id, user.fulfillmentLocationId!, task.status,
       );
       if (result.changes !== 1) throw new Error("状態が別の端末で更新されました");
       runSql(db, "INSERT INTO fulfillment_events (fulfillment_id, from_status, to_status, changed_by) VALUES (?, ?, ?, ?)", id, task.status, status, user.id);
+      recordAuditEvent(db, {
+        orderId: task.order_id,
+        fulfillmentId: id,
+        displayNumber: task.display_number,
+        displayNumberDate: task.display_number_date,
+        locationName: task.location_name,
+        eventType: "fulfillment_status",
+        fromStatus: task.status,
+        toStatus: status,
+        actorUserId: user.id,
+        actorUsername: user.username,
+      });
       recomputeOrderStatus(db, task.order_id);
     });
     try { update(); } catch (error) { set.status = 409; return { error: error instanceof Error ? error.message : "更新できませんでした" }; }

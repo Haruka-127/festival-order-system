@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { todayDate } from "../services/numbering";
 
 export function monitorPage(securityNonce = ""): string {
   return `<!DOCTYPE html>
@@ -14,7 +15,7 @@ export function monitorPage(securityNonce = ""): string {
     .title{margin:0;padding:clamp(14px,2vh,28px);text-align:center;font-size:clamp(28px,2.6vw,48px);font-weight:800;line-height:1.1}.waiting .title{background:var(--waiting-bg);color:#374151}.calling .title{background:var(--calling-bg);color:#fff}
     .content{min-height:0;padding:clamp(16px,2.2vh,30px) clamp(20px,3vw,48px);overflow:hidden}.location{margin-bottom:clamp(14px,2vh,28px)}.location-name{font-size:clamp(19px,1.55vw,30px);font-weight:750;padding-bottom:5px;border-bottom:1px solid #e5e7eb}.numbers{display:flex;flex-direction:column;align-items:flex-start}.number{font-variant-numeric:tabular-nums;font-size:clamp(48px,5.2vw,92px);font-weight:800;line-height:1.05;letter-spacing:.025em}.waiting .number{color:var(--waiting-text)}.calling .number{color:var(--calling-text)}
     .content.dense .location{margin-bottom:8px}.content.dense .location-name{font-size:clamp(17px,1.3vw,24px)}.content.dense .number{font-size:clamp(40px,4vw,68px);line-height:1}
-    .guidance{border-top:2px solid #111827;padding:clamp(12px,1.8vh,22px) 24px;text-align:center;font-size:clamp(20px,1.8vw,34px);font-weight:700;line-height:1.25}.page{position:fixed;right:14px;bottom:8px;color:#6b7280;font-size:13px}
+    .guidance{border-top:2px solid #111827;padding:clamp(12px,1.8vh,22px) 24px;text-align:center;font-size:clamp(20px,1.8vw,34px);font-weight:700;line-height:1.25}.page{position:fixed;right:14px;bottom:8px;color:#6b7280;font-size:13px}.connection{position:fixed;left:14px;bottom:8px;color:#6b7280;font-size:12px}.connection.offline{color:#b91c1c}.date-label{font-size:.2em;color:#991b1b;margin-left:.4em;vertical-align:middle}
     .number.new{animation:number-fade-in 400ms ease-out}@keyframes number-fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
     @media(max-width:640px){html,body{height:auto;min-height:100%;overflow:auto}.screen{height:auto;min-height:100dvh}.board{grid-template-columns:1fr}.column+ .column{border-left:0;border-top:2px solid var(--divider)}.content{min-height:120px;overflow:visible;padding:16px 20px}.title{padding:14px;font-size:28px}.location-name{font-size:19px}.number,.content.dense .number{font-size:48px}.guidance{padding:14px 18px;font-size:18px}.page{position:static;padding:0 14px 8px;text-align:right}}
     @media(prefers-reduced-motion:reduce){.number.new{animation:none}}
@@ -29,6 +30,7 @@ export function monitorPage(securityNonce = ""): string {
     <footer class="guidance">お手元の受付番号をご確認ください。番号が表示されたブースで商品をお受け取りください。</footer>
   </div>
   <div id="page" class="page"></div>
+  <div id="connection" class="connection">接続中</div>
   <script nonce="${securityNonce}">
     const PAGE_SIZE = 10;
     const PAGE_INTERVAL = 8000;
@@ -39,6 +41,8 @@ export function monitorPage(securityNonce = ""): string {
     let newIds = new Set();
     let waitingPage = 0;
     let callingPage = 0;
+    let reconnectDelay = 3000;
+    const currentDate = ${JSON.stringify(todayDate())};
 
     const escapeHtml = value => String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     const pad = value => String(value).padStart(${config.displayNumberDigits}, '0');
@@ -63,7 +67,7 @@ export function monitorPage(securityNonce = ""): string {
         if (!group || group.id !== entry.location_id) { group = { id: entry.location_id, name: entry.location_name, entries: [] }; groups.push(group); }
         group.entries.push(entry);
       }
-      root.innerHTML = groups.map(group => '<section class="location"><h2 class="location-name">' + escapeHtml(group.name) + '</h2><div class="numbers">' + group.entries.map(entry => '<div class="number' + (newIds.has(entry.fulfillment_id) ? ' new' : '') + '" data-id="' + escapeHtml(entry.fulfillment_id) + '">' + pad(entry.display_number) + '</div>').join('') + '</div></section>').join('');
+      root.innerHTML = groups.map(group => '<section class="location"><h2 class="location-name">' + escapeHtml(group.name) + '</h2><div class="numbers">' + group.entries.map(entry => '<div class="number' + (newIds.has(entry.fulfillment_id) ? ' new' : '') + '" data-id="' + escapeHtml(entry.fulfillment_id) + '">' + pad(entry.display_number) + (entry.display_number_date && entry.display_number_date !== currentDate ? '<span class="date-label">' + escapeHtml(entry.display_number_date) + '</span>' : '') + '</div>').join('') + '</div></section>').join('');
     }
 
     function render() {
@@ -92,15 +96,23 @@ export function monitorPage(securityNonce = ""): string {
     }
 
     async function load() {
-      const response = await fetch('/api/monitor/board');
-      if (response.ok) applyBoard(await response.json(), knownKeys.size > 0);
+      try {
+        const response = await fetch('/api/monitor/board');
+        if (response.ok) { applyBoard(await response.json(), knownKeys.size > 0); setConnection('同期済み', false); }
+      } catch { setConnection('オフライン・再接続中', true); }
+    }
+    function setConnection(message, offline) {
+      const element = document.getElementById('connection');
+      element.textContent = message + ' ' + new Date().toLocaleTimeString('ja-JP');
+      element.classList.toggle('offline', offline);
     }
     function connect() {
       if (socket && socket.readyState <= 1) return;
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       socket = new WebSocket(protocol + '//' + location.host + '/ws/monitor');
+      socket.onopen = () => { reconnectDelay = 3000; setConnection('リアルタイム接続済み', false); };
       socket.onmessage = event => { try { const data = JSON.parse(event.data); if (data.type === 'monitor_update') applyBoard({ locations: data.locations || [] }); } catch {} };
-      socket.onclose = () => { socket = null; reconnectTimer = setTimeout(connect, 3000); };
+      socket.onclose = () => { socket = null; setConnection('再接続中', true); reconnectTimer = setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
       socket.onerror = () => socket && socket.close();
     }
     setInterval(() => {
@@ -110,6 +122,7 @@ export function monitorPage(securityNonce = ""): string {
       if (callingPages > 1) callingPage = (callingPage + 1) % callingPages;
       if (waitingPages > 1 || callingPages > 1) render();
     }, PAGE_INTERVAL);
+    setInterval(load, 15000);
     load().then(connect);
   </script>
 </body>
