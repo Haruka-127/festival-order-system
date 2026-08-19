@@ -18,13 +18,13 @@ export async function setupTestDb() {
   runSql(db, "INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
     "staff-id", "staff1", staffHash, "staff");
 
-  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order) VALUES (?, ?, ?, ?, ?)",
+  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order, fulfillment_location_id) VALUES (?, ?, ?, ?, ?, 1)",
     1, "テスト商品A", 1, 0, 1);
-  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order) VALUES (?, ?, ?, ?, ?)",
+  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order, fulfillment_location_id) VALUES (?, ?, ?, ?, ?, 1)",
     2, "テスト商品B", 1, 0, 2);
-  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order) VALUES (?, ?, ?, ?, ?)",
+  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order, fulfillment_location_id) VALUES (?, ?, ?, ?, ?, 1)",
     3, "売切商品C", 1, 1, 3);
-  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order) VALUES (?, ?, ?, ?, ?)",
+  runSql(db, "INSERT OR IGNORE INTO items (id, name, active, sold_out, sort_order, fulfillment_location_id) VALUES (?, ?, ?, ?, ?, 1)",
     4, "停止商品D", 0, 0, 4);
 
   return db;

@@ -50,6 +50,9 @@ describe("view scripts", () => {
     expect(html).toContain('id="submit-order"');
     expect(html).toContain('id="menu-grid"');
     expect(html).toContain('id="order-list"');
+    expect(html).toContain("sessionStorage.getItem('staff-order-draft')");
+    expect(html).toContain("fetch('/api/staff/items')");
+    expect(html).toContain("キャンセル理由を入力してください");
     expect(html).toContain(".cart-qty button{width:44px;height:44px;border-radius:2px;border:1px solid #9ca3af;background:#fff;color:var(--ink)");
     expect(html).toContain(".search-box input{width:100%;min-height:46px;padding:10px 14px;border:1px solid #9ca3af;border-radius:2px;font-size:15px;background:#fff;color:var(--ink)");
   });
@@ -131,6 +134,8 @@ describe("view scripts", () => {
 
     expectInlineScriptsToParse(html);
     expectStrictScriptMarkup(html);
+    expect(html).toContain("setInterval(load, 15000)");
+    expect(html).toContain("リアルタイム接続済み");
   });
 
   test("monitor page inline scripts are valid JavaScript", () => {
@@ -139,6 +144,8 @@ describe("view scripts", () => {
     expectStrictScriptMarkup(html);
     expect(html).toContain("@media(max-width:640px){html,body{height:auto;min-height:100%;overflow:auto}");
     expect(html).toContain(".board{grid-template-columns:1fr}");
+    expect(html).toContain("setInterval(load, 15000)");
+    expect(html).toContain('id="connection"');
   });
 
   test("provider page logout button has an explicit visible text color", () => {
@@ -147,5 +154,7 @@ describe("view scripts", () => {
     expectStrictScriptMarkup(html);
     expect(html).toContain(".logout,.action{border:1px solid #d1d5db;background:#fff;color:#111827");
     expect(html).toContain("grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))");
+    expect(html).toContain("受渡完了を取り消す");
+    expect(html).toContain("setInterval(loadTasks, 5000)");
   });
 });
