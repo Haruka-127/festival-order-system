@@ -37,18 +37,21 @@ return pageDocument({
     script: "admin",
     bodyAttributes: { "data-flash-messages": serializedFlashMessages },
     content: `
-<div class="app">
     <header class="header">
-      <div class="header-title">
-        <h1>管理画面</h1>
-      </div>
-      <div class="header-actions">
-        <a href="/staff" class="btn btn-primary btn-sm">店員画面へ</a>
-        <form method="POST" action="/logout" class="inline-form">
-          <button type="submit" class="btn btn-secondary btn-sm">ログアウト</button>
-        </form>
+      <div class="header-inner">
+        <div class="header-brand">
+          <div class="header-mark" aria-hidden="true">管</div>
+          <div><div class="header-kicker">FESTIVAL ORDER SYSTEM</div><h1>管理画面</h1></div>
+        </div>
+        <div class="header-actions">
+          <a href="/staff" class="btn btn-sm">店員画面</a>
+          <form method="POST" action="/logout" class="inline-form">
+            <button type="submit" class="btn btn-sm">ログアウト</button>
+          </form>
+        </div>
       </div>
     </header>
+<div class="app">
 
     <section class="overview" aria-label="現在の注文状況">
       <div class="overview-item"><span class="status-dot ${settings.ordering_enabled ? "is-open" : "is-closed"}" aria-hidden="true"></span><span class="overview-label">注文</span><strong class="overview-value">${settings.ordering_enabled ? "受付中" : "停止中"}</strong></div>

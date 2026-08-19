@@ -45,6 +45,9 @@ describe("server-rendered views", () => {
       { number: 1, date: "2026-06-25" },
     );
     expectExternalAssets(html, "admin");
+    expect(html).toContain('class="header-inner"');
+    expect(html).toContain('class="header-mark" aria-hidden="true">管</div>');
+    expect(html).toContain('<a href="/staff" class="btn btn-sm">店員画面</a>');
     expect(html).toContain('<nav class="tabs" aria-label="管理メニュー">');
     expect(html.match(/class="tab(?: active)?" href="\/admin\//g)).toHaveLength(4);
     expect(html).toContain('class="tab active" href="/admin/items"');
@@ -62,6 +65,7 @@ describe("server-rendered views", () => {
     expect(client).not.toContain("function showTab");
     const css = await source("../src/styles/admin.css");
     expect(css).toContain("--green:#166534");
+    expect(css).toContain(".header{width:100%;background:var(--green)");
     expect(css).toContain(".dialog-close{width:38px;height:38px");
   });
 
