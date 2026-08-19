@@ -12,7 +12,6 @@
 | Webフレームワーク | [Elysia](https://elysiajs.com) v1.4 | Bun最適化、軽量、型安全、WebSocket対応 |
 | データベース | SQLite (bun:sqlite) | サーバー再起動後もデータ保持、外部依存不要、バックアップがファイルコピーだけで完了 |
 | リアルタイム通信 | WebSocket (Bun内蔵) | 双方向通信、サーバーpushが可能、ポーリング不要 |
-| QRコード | qrcode | 純JS実装、軽量、サーバーサイドでPNG生成 |
 | 認証 | Cookieベースセッション + Bun.password (argon2id) | シンプル、外部サービス不要、パスワードはハッシュ化保存 |
 | テスト | bun:test | Bun組み込み、高速、設定不要 |
 | パッケージ管理 | Bun | bun.lockで確定、高速 |
@@ -118,7 +117,7 @@ db.close();
 | `BIND_ADDRESS` | `0.0.0.0` | Docker公開ポートのバインド先 |
 | `HOST` | `0.0.0.0` | サーバーのバインドアドレス |
 | `DATA_DIR` | `./data` | SQLiteデータベースの保存先ディレクトリ |
-| `BASE_URL` | `http://localhost:3000` | QRコードに埋め込むURLのベース。リバースプロキシ使用時は必ず公開URL（例: `https://example.com`）に設定すること |
+| `BASE_URL` | `http://localhost:3000` | 同一オリジン検証に使用する公開URL。リバースプロキシ使用時は公開URLを設定すること |
 | `ADMIN_USERNAME` | `admin` | 初期管理者ユーザー名 |
 | `ADMIN_PASSWORD` | 開発時は `admin123` | 初期管理者パスワード。本番の初回起動では強い値が必須（既存DBの変更方法は上記参照） |
 | `DISPLAY_NUMBER_DIGITS` | `3` | 受付番号の桁数（例: 3→001） |
@@ -270,7 +269,6 @@ bun run src/index.ts
 | GET | `/monitor` | モニターページ |
 | GET | `/order/:token` | 利用客ページ |
 | GET | `/api/order/:token` | 注文情報API |
-| GET | `/api/qr/:token` | QRコード画像 |
 | GET | `/health/live` | プロセスの稼働確認 |
 | GET | `/health/ready` | DBを含む準備完了確認 |
 | GET | `/api/monitor/board` | 提供場所別の待ち・呼び出し番号一覧 |
@@ -318,7 +316,7 @@ server {
 
 **重要**: WebSocketを使用するため、`Upgrade` と `Connection` ヘッダーの適切な転送が必要。
 
-**重要**: リバースプロキシ使用時は環境変数 `BASE_URL` に公開用URL（例: `https://example.com`）を必ず設定してください。未設定の場合、QRコードに `http://localhost:3000/...` が埋め込まれ、お客様がURLにアクセスできなくなります。
+**重要**: リバースプロキシ使用時は環境変数 `BASE_URL` に公開用URL（例: `https://example.com`）を必ず設定してください。同一オリジン検証とWebSocket接続先の基準になります。
 
 ## プロセス管理（本番運用）
 
@@ -392,8 +390,11 @@ GitHub Actionsでも同じチェックを実行する。
 ├── src/
 │   ├── index.ts              # エントリーポイント、サーバー起動
 │   ├── config.ts             # 設定・環境変数
+│   ├── contracts/            # 画面・APIで共有する型
+│   ├── client/               # ブラウザで実行するTypeScript
 │   ├── db/
-│   │   └── database.ts       # SQLite接続・スキーマ定義
+│   │   ├── database.ts       # SQLite接続・クエリ補助
+│   │   └── migrations.ts     # スキーマ・データ移行
 │   ├── middleware/
 │   │   └── auth.ts           # 認証ミドルウェア
 │   ├── services/
@@ -404,13 +405,12 @@ GitHub Actionsでも同じチェックを実行する。
 │   │   ├── staff.ts          # 店員画面・注文API
 │   │   ├── admin.ts          # 管理画面・管理API
 │   │   ├── monitor.ts        # モニター画面
-│   │   └── customer.ts       # 利用客画面・QRコード
+│   │   └── customer.ts       # 利用客画面・注文状態API
+│   ├── styles/               # 画面別CSS
 │   └── views/
-│       ├── components.ts     # 共通HTML部品（レイアウト、ログインページ）
-│       ├── staff.ts          # 店員画面HTML
-│       ├── admin.ts          # 管理画面HTML
-│       ├── monitor.ts        # モニター画面HTML
-│       └── customer.ts       # 利用客画面HTML
+│       ├── layout.tsx        # 型付き共通HTML文書
+│       ├── components.tsx    # ログイン・エラーページ
+│       └── *.tsx             # サーバー描画する各画面
 ├── tests/
 │   ├── setup.ts              # テスト用DBセットアップ
 │   ├── auth.test.ts          # 認証テスト
