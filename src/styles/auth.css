@@ -1,0 +1,11 @@
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#f3f4f6;color:#111827;line-height:1.6}
+.auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.auth-page.centered{text-align:center;background:#fff}
+.auth-card{width:100%;max-width:440px;padding:28px;background:#fff;border:1px solid #d1d5db;border-radius:8px}
+h1{margin:0 0 20px;text-align:center;font-size:26px}.error-code{font-size:52px;margin-bottom:8px}
+.auth-form{display:flex;flex-direction:column;gap:16px}.auth-form label{display:flex;flex-direction:column;gap:5px;font-weight:700}
+input{width:100%;padding:12px;border:1px solid #9ca3af;border-radius:6px;font:inherit;font-weight:400}
+.primary-button{min-height:50px;border:1px solid #111827;border-radius:7px;background:#111827;color:#fff;font:inherit;font-size:17px;font-weight:800;cursor:pointer}
+.alert{padding:10px;border:1px solid;margin-bottom:16px;text-align:center}.alert-error{border-color:#fecaca;color:#991b1b}.alert-success{border-color:#bbf7d0;color:#166534}
+.back-link{display:block;margin-top:18px;text-align:center;color:#166534;font-weight:700}

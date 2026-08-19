@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { staticPlugin } from "@elysia/static";
 import { checkDatabaseReady, getDb, getOne } from "./db/database";
 import { wsManager } from "./services/websocket";
 import { authRoutes } from "./routes/auth";
@@ -13,6 +14,13 @@ import { getCustomerOrderByToken, getMonitorBoard } from "./services/fulfillment
 
 const requestIds = new WeakMap<Request, string>();
 const requestStartedAt = new WeakMap<Request, number>();
+const staticAssets = await staticPlugin({
+  assets: process.env.ASSETS_DIR ?? "./dist/public/assets",
+  prefix: "/assets",
+  indexHTML: false,
+  maxAge: process.env.NODE_ENV === "production" ? 86400 : 0,
+  silent: true,
+});
 
 function requestIdFor(request: Request): string {
   let requestId = requestIds.get(request);
@@ -29,6 +37,7 @@ function logPath(request: Request): string {
 
 export function createApp() {
   return new Elysia({ serve: { maxRequestBodySize: 64 * 1024 } })
+    .use(staticAssets)
     .derive({ as: "global" }, () => ({ securityNonce: crypto.randomUUID().replaceAll("-", "") }))
     .onRequest(({ request, set }) => {
       const requestId = requestIdFor(request);

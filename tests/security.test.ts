@@ -58,7 +58,7 @@ describe("security primitives", () => {
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
     expect(headers["Referrer-Policy"]).toBe("same-origin");
     expect(headers["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
-    expect(headers["Content-Security-Policy"]).toContain("script-src 'nonce-testnonce'");
+    expect(headers["Content-Security-Policy"]).toContain("script-src 'self' 'nonce-testnonce'");
     expect(headers["Content-Security-Policy"]).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(headers["Cache-Control"]).toBe("no-store");
   });
@@ -70,6 +70,6 @@ test("stored item names are encoded again before insertion into an HTML sink", (
     [{ id: 1, name: payload, sold_out: 0, sort_order: 1 }],
     [],
   );
-  expect(html).toContain("escapeHtml(name)");
+  expect(html).toContain("&lt;img src=x onerror=&quot;globalThis.pwned=true&quot;&gt;");
   expect(html).not.toContain(`<span>${payload}</span>`);
 });

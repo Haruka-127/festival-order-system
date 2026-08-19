@@ -36,7 +36,7 @@ export function applySecurityHeaders(headers: Record<string, string | number>, _
   headers["Cross-Origin-Resource-Policy"] = "same-origin";
   headers["Cross-Origin-Opener-Policy"] = "same-origin";
   headers["Origin-Agent-Cluster"] = "?1";
-  const scriptSource = scriptNonce ? `'nonce-${scriptNonce}'` : "'none'";
+  const scriptSource = scriptNonce ? `'self' 'nonce-${scriptNonce}'` : "'self'";
   const websocketOrigin = config.publicOrigin.replace(/^http/, "ws");
   headers["Content-Security-Policy"] = `default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src ${scriptSource}; connect-src 'self' ${websocketOrigin}`;
 
