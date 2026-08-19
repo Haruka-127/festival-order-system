@@ -123,6 +123,7 @@ db.close();
 | `ADMIN_PASSWORD` | 開発時は `admin123` | 初期管理者パスワード。本番の初回起動では強い値が必須（既存DBの変更方法は上記参照） |
 | `DISPLAY_NUMBER_DIGITS` | `3` | 受付番号の桁数（例: 3→001） |
 | `APP_TIME_ZONE` | `Asia/Tokyo` | 採番日・注文受付時間の判定に使用するIANAタイムゾーン |
+| `BACKUP_RETENTION_COUNT` | `20` | 管理画面と注文削除前に作成するDBバックアップの最大保持数 |
 | `COOKIE_SECURE` | `NODE_ENV=production` の場合は `true` | CookieのSecure属性。本番は `true` のままHTTPSで運用すること |
 | `ALLOW_INSECURE_HTTP` | `false` | 隔離された信頼済みLANでHTTP運用を明示的に許可する緊急用設定 |
 | `TRUST_PROXY` | `false` | 接続元を試行制限に使うため転送IPヘッダーを信頼する。アプリへの直接接続を遮断した場合のみ有効化 |
@@ -151,7 +152,7 @@ db.close();
 ```
 
 管理画面の「今すぐバックアップ」からも、整合したスナップショットを
-`{DATA_DIR}/backups/orders-<UTC日時>.db` に作成できる。古い完了注文を削除する際も、削除前に同じ形式のバックアップを自動作成し、作成に失敗した場合は削除を中止する。
+`{DATA_DIR}/backups/orders-<UTC日時>.db` に作成できる。古い完了注文を削除する際も、削除前に同じ形式のバックアップを自動作成し、作成に失敗した場合は削除を中止する。バックアップは新しいものから `BACKUP_RETENTION_COUNT` 件（デフォルト20件）を保持し、それより古い自動生成ファイルは削除する。
 
 ### 復元
 

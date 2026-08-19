@@ -6,6 +6,7 @@ const cookieSecure = process.env.COOKIE_SECURE === undefined
 
 const port = Number(process.env.PORT ?? "3000");
 const displayNumberDigits = Number(process.env.DISPLAY_NUMBER_DIGITS ?? "3");
+const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT ?? "20");
 const baseUrl = (process.env.BASE_URL || `http://localhost:${port}`).replace(/\/+$/, "");
 
 export const config = {
@@ -20,6 +21,7 @@ export const config = {
   displayNumberDigits,
   displayNumberPad: (n: number) => n.toString().padStart(displayNumberDigits, "0"),
   timeZone: process.env.APP_TIME_ZONE || "Asia/Tokyo",
+  backupRetentionCount,
 
   baseUrl,
   publicOrigin: new URL(baseUrl).origin,
@@ -40,6 +42,7 @@ export const config = {
 export function validateRuntimeConfig(): void {
   if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) throw new Error("PORT must be an integer from 1 to 65535.");
   if (!Number.isInteger(config.displayNumberDigits) || config.displayNumberDigits < 1 || config.displayNumberDigits > 12) throw new Error("DISPLAY_NUMBER_DIGITS must be an integer from 1 to 12.");
+  if (!Number.isInteger(config.backupRetentionCount) || config.backupRetentionCount < 1 || config.backupRetentionCount > 1000) throw new Error("BACKUP_RETENTION_COUNT must be an integer from 1 to 1000.");
   try { new Intl.DateTimeFormat("ja-JP", { timeZone: config.timeZone }).format(new Date()); }
   catch { throw new Error("APP_TIME_ZONE must be a valid IANA time zone."); }
   const publicUrl = new URL(config.baseUrl);

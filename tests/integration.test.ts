@@ -78,6 +78,17 @@ test("advanced admin forms return to the advanced settings path", async () => {
   expect(response.headers.get("location")).toBe("/admin/settings/advanced");
 });
 
+test("invalid administration forms return to their page with a flash message", async () => {
+  const response = await app.handle(request("/api/admin/users/staff-id/password", "POST", {
+    password: "short",
+  }, "integration-admin"));
+  expect(response.status).toBe(303);
+  expect(response.headers.get("location")).toBe("/admin/users");
+
+  const page = await app.handle(request("/admin/users", "GET", undefined, "integration-admin"));
+  expect(await page.text()).toContain("パスワードは10文字以上で入力してください");
+});
+
 test("reusing an order request id returns the original order without double reservation", async () => {
   const payload = { items: [{ item_id: 1, quantity: 2 }], client_request_id: "integration-request-0001" };
   const first = await app.handle(request("/api/staff/orders", "POST", payload, "integration-cashier"));
@@ -157,6 +168,9 @@ test("an administrator can change a staff password and revoke existing sessions"
   const account = getOne<{ password_hash: string }>(getDb(), "SELECT password_hash FROM users WHERE id = 'staff-id'")!;
   expect(await Bun.password.verify("administrator-managed-password", account.password_hash)).toBe(true);
   expect(getOne(getDb(), "SELECT id FROM sessions WHERE id = 'integration-cashier'")).toBeNull();
+  const audit = getOne<{ actor_username: string; details: string }>(getDb(), "SELECT actor_username, details FROM audit_events WHERE event_type = 'admin_action' ORDER BY id DESC LIMIT 1")!;
+  expect(audit.actor_username).toBe("admin");
+  expect(JSON.parse(audit.details)).toEqual({ action: "staff_password_changed", userId: "staff-id" });
 });
 
 test("staff password changes are only exposed through administration", async () => {

@@ -1,9 +1,19 @@
 import type { Database } from "bun:sqlite";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { config } from "../config";
 import { getDb } from "../db/database";
 
 export type BackupResult = { filename: string; bytes: number };
+
+function pruneOldBackups(backupDirectory: string): void {
+  const backups = readdirSync(backupDirectory)
+    .filter(filename => /^orders-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.db$/.test(filename))
+    .sort()
+    .reverse();
+  for (const filename of backups.slice(config.backupRetentionCount)) {
+    unlinkSync(`${backupDirectory}/${filename}`);
+  }
+}
 
 export async function createDatabaseBackup(db: Database = getDb()): Promise<BackupResult> {
   const backupDirectory = `${config.dataDir}/backups`;
@@ -15,5 +25,6 @@ export async function createDatabaseBackup(db: Database = getDb()): Promise<Back
   const contents = db.serialize();
   await Bun.write(path, contents);
   chmodSync(path, 0o600);
+  pruneOldBackups(backupDirectory);
   return { filename, bytes: contents.byteLength };
 }

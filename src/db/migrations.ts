@@ -187,7 +187,7 @@ function migrateMultiLocationSchema(db: Database): void {
       display_number INTEGER,
       display_number_date TEXT,
       location_name TEXT,
-      event_type TEXT NOT NULL CHECK(event_type IN ('order_created', 'order_cancelled', 'fulfillment_status', 'orders_cleaned')),
+      event_type TEXT NOT NULL CHECK(event_type IN ('order_created', 'order_cancelled', 'fulfillment_status', 'orders_cleaned', 'admin_action')),
       from_status TEXT,
       to_status TEXT,
       actor_user_id TEXT,
@@ -284,5 +284,36 @@ function migrateMultiLocationSchema(db: Database): void {
       );
     `);
     db.exec("PRAGMA user_version = 3;");
+  }
+  if (schemaVersion < 4) {
+    db.exec(`
+      ALTER TABLE audit_events RENAME TO audit_events_before_admin_audit;
+      CREATE TABLE audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id TEXT,
+        fulfillment_id TEXT,
+        display_number INTEGER,
+        display_number_date TEXT,
+        location_name TEXT,
+        event_type TEXT NOT NULL CHECK(event_type IN ('order_created', 'order_cancelled', 'fulfillment_status', 'orders_cleaned', 'admin_action')),
+        from_status TEXT,
+        to_status TEXT,
+        actor_user_id TEXT,
+        actor_username TEXT,
+        details TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      );
+      INSERT INTO audit_events (
+        id, order_id, fulfillment_id, display_number, display_number_date, location_name,
+        event_type, from_status, to_status, actor_user_id, actor_username, details, created_at
+      )
+      SELECT id, order_id, fulfillment_id, display_number, display_number_date, location_name,
+             event_type, from_status, to_status, actor_user_id, actor_username, details, created_at
+      FROM audit_events_before_admin_audit;
+      DROP TABLE audit_events_before_admin_audit;
+      CREATE INDEX idx_audit_events_created ON audit_events(created_at DESC, id DESC);
+      CREATE INDEX idx_audit_events_order ON audit_events(order_id, created_at);
+      PRAGMA user_version = 4;
+    `);
   }
 }

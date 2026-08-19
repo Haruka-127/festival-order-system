@@ -7,13 +7,29 @@ export type AuditEventInput = {
   displayNumber?: number | null;
   displayNumberDate?: string | null;
   locationName?: string | null;
-  eventType: "order_created" | "order_cancelled" | "fulfillment_status" | "orders_cleaned";
+  eventType: "order_created" | "order_cancelled" | "fulfillment_status" | "orders_cleaned" | "admin_action";
   fromStatus?: string | null;
   toStatus?: string | null;
   actorUserId?: string | null;
   actorUsername?: string | null;
   details?: Record<string, unknown> | null;
 };
+
+export type AdminAuditActor = { id: string; username: string };
+
+export function recordAdminAction(
+  db: Database,
+  actor: AdminAuditActor,
+  action: string,
+  details: Record<string, unknown> = {},
+): void {
+  recordAuditEvent(db, {
+    eventType: "admin_action",
+    actorUserId: actor.id,
+    actorUsername: actor.username,
+    details: { action, ...details },
+  });
+}
 
 export function recordAuditEvent(db: Database, event: AuditEventInput): void {
   const details = event.details ? JSON.stringify(event.details).slice(0, 2000) : null;
