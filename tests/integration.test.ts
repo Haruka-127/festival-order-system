@@ -198,3 +198,34 @@ test("staff password changes are only exposed through administration", async () 
   const response = await app.handle(request("/account/password", "GET", undefined, "integration-cashier"));
   expect(response.status).toBe(404);
 });
+
+test("malformed JSON bodies return 400 instead of a server error", async () => {
+  const malformed = (path: string, sessionId?: string) => {
+    const headers: Record<string, string> = { Origin: origin, "Content-Type": "application/json" };
+    if (sessionId) headers.Cookie = `session_id=${sessionId}`;
+    return app.handle(new Request(`${origin}${path}`, { method: "POST", headers, body: '{"username":', redirect: "manual" }));
+  };
+  expect((await malformed("/login")).status).toBe(400);
+  expect((await malformed("/api/staff/orders", "integration-cashier")).status).toBe(400);
+});
+
+test("correct logins are never locked out by failed attempts on the same username", async () => {
+  const db = getDb();
+  const passwordHash = await Bun.password.hash("legitimate-password-123");
+  runSql(db, "INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES ('lockout-user-id', 'lockout-target', ?, 'staff')", passwordHash);
+
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const response = await app.handle(request("/login", "POST", { username: "lockout-target", password: `wrong-${attempt}` }));
+    expect(response.status).toBe(200);
+  }
+  const blocked = await app.handle(request("/login", "POST", { username: "lockout-target", password: "wrong-again" }));
+  expect(blocked.status).toBe(429);
+  expect(blocked.headers.get("retry-after")).toBe("900");
+
+  const legitimate = await app.handle(request("/login", "POST", { username: "lockout-target", password: "legitimate-password-123" }));
+  expect(legitimate.status).toBe(302);
+  expect(legitimate.headers.get("location")).toBe("/staff");
+
+  runSql(db, "DELETE FROM sessions WHERE user_id = 'lockout-user-id'");
+  runSql(db, "DELETE FROM users WHERE id = 'lockout-user-id'");
+});

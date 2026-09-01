@@ -125,6 +125,18 @@ export function createApp() {
         applySecurityHeaders(headers, pathname);
         return new Response(notFoundPage(), { status: 404, headers: headers as HeadersInit });
       }
+      if (code === "PARSE" || code === "VALIDATION") {
+        console.warn(JSON.stringify({
+          level: "warn",
+          requestId,
+          method: request.method,
+          path: logPath(request),
+          code,
+        }));
+        const headers: Record<string, string | number> = { "X-Request-ID": requestId };
+        applySecurityHeaders(headers, pathname);
+        return new Response("リクエストの形式が不正です", { status: 400, headers: headers as HeadersInit });
+      }
       console.error(JSON.stringify({
         level: "error",
         requestId,

@@ -60,11 +60,12 @@ export const authRoutes = new Elysia()
     const clientKey = getClientKey(request, server);
     const accountKey = `${clientKey}\0${username}`;
     const normalizedUsername = username.trim().toLocaleLowerCase("en-US");
-    if (loginIpLimiter.isBlocked(clientKey) || loginAccountLimiter.isBlocked(accountKey) || loginUsernameLimiter.isBlocked(normalizedUsername)) {
+    const tooManyAttempts = () => {
       set.status = 429;
       set.headers["Retry-After"] = "900";
       return new Response(loginPage("ログイン試行が多すぎます。しばらく待ってから再試行してください"), { status: 429, headers: { "Content-Type": "text/html; charset=utf-8", "Retry-After": "900" } });
-    }
+    };
+    if (loginIpLimiter.isBlocked(clientKey)) return tooManyAttempts();
 
     const db = getDb();
     const row = getOne<{ id: string; password_hash: string; role: string; staff_type: string }>(
@@ -78,6 +79,7 @@ export const authRoutes = new Elysia()
       loginIpLimiter.recordFailure(clientKey);
       loginAccountLimiter.recordFailure(accountKey);
       loginUsernameLimiter.recordFailure(normalizedUsername);
+      if (loginAccountLimiter.isBlocked(accountKey) || loginUsernameLimiter.isBlocked(normalizedUsername)) return tooManyAttempts();
       return new Response(loginPage("ユーザー名またはパスワードが正しくありません"), { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
 
