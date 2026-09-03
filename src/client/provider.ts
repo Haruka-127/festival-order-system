@@ -27,18 +27,19 @@ function actionButton(label: string, task: Task, status: TaskStatus, className: 
 function taskElement(task: Task): HTMLElement {
   const card = document.createElement("article");
   card.className = `card ${task.status === "ready" ? "ready-card" : task.status === "handed_over" ? "completed-card" : ""}`;
+  card.dataset.status = task.status;
   const header = document.createElement("div");
   header.className = "task-head";
   const number = document.createElement("div");
   number.className = "number";
   number.textContent = String(task.display_number).padStart(digits, "0");
   const status = document.createElement("div");
-  status.className = "badge";
-  status.textContent = task.status === "ready" ? "お呼び出し中" : task.status === "handed_over" ? "受渡済み（2分間取消可）" : "準備中";
+  status.className = `badge status-${task.status}`;
+  status.textContent = task.status === "ready" ? "お渡し待ち" : task.status === "handed_over" ? "提供済み" : "準備中";
   const numberGroup = document.createElement("div");
   numberGroup.append(number);
   if (task.display_number_date && task.display_number_date !== currentDate) {
-    const date = document.createElement("div"); date.className = "badge"; date.textContent = `${task.display_number_date}受付`; numberGroup.append(date);
+    const date = document.createElement("div"); date.className = "date-badge"; date.textContent = `${task.display_number_date}受付`; numberGroup.append(date);
   }
   header.append(numberGroup, status);
   const items = document.createElement("div"); items.className = "items";
@@ -58,10 +59,27 @@ function taskElement(task: Task): HTMLElement {
 
 function render(tasks: Task[]): void {
   const root = requiredElement("task-list");
-  if (!tasks.length) {
-    const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "現在、準備中の商品はありません"; root.replaceChildren(empty); return;
+  const lanes: { status: TaskStatus; label: string; empty: string }[] = [
+    { status: "preparing", label: "準備中", empty: "準備中の注文はありません" },
+    { status: "ready", label: "お渡し待ち", empty: "お渡し待ちの注文はありません" },
+    { status: "handed_over", label: "提供済み", empty: "直近の提供済み注文はありません" },
+  ];
+  const board = document.createElement("div");
+  board.className = "kanban-board";
+  for (const lane of lanes) {
+    const laneTasks = tasks.filter(task => task.status === lane.status);
+    const section = document.createElement("section"); section.className = `kanban-lane lane-${lane.status}`;
+    const heading = document.createElement("div"); heading.className = "lane-heading";
+    const title = document.createElement("h3"); title.id = `lane-${lane.status}-heading`; title.textContent = lane.label;
+    section.setAttribute("aria-labelledby", title.id);
+    const count = document.createElement("span"); count.className = "lane-count"; count.textContent = `${laneTasks.length}件`;
+    const cards = document.createElement("div"); cards.className = "lane-cards";
+    heading.append(title, count);
+    if (laneTasks.length) cards.append(...laneTasks.map(taskElement));
+    else { const empty = document.createElement("p"); empty.className = "lane-empty"; empty.textContent = lane.empty; cards.append(empty); }
+    section.append(heading, cards); board.append(section);
   }
-  const grid = document.createElement("div"); grid.className = "grid"; grid.append(...tasks.map(taskElement)); root.replaceChildren(grid);
+  root.replaceChildren(board);
 }
 
 function setConnection(message: string, offline: boolean): void {
@@ -85,7 +103,7 @@ function scheduleSync(): void {
 }
 
 async function updateStatus(id: string, status: TaskStatus): Promise<void> {
-  if (pending.has(id) || (status === "handed_over" && !confirm("受付番号の受け渡しを完了しますか？"))) return;
+  if (pending.has(id)) return;
   pending.add(id);
   document.querySelectorAll<HTMLButtonElement>(`button[data-id="${CSS.escape(id)}"]`).forEach(button => button.disabled = true);
   try {

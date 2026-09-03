@@ -128,10 +128,20 @@ describe("server-rendered views", () => {
   test("provider page has external task assets", async () => {
     const html = providerPage("焼き場", []);
     expectExternalAssets(html, "provider");
+    expect(html).toContain('class="kanban-board"');
+    expect(html).toContain('class="kanban-lane lane-preparing"');
+    expect(html).toContain('class="kanban-lane lane-ready"');
+    expect(html).toContain('class="kanban-lane lane-handed_over"');
+    expect(html).not.toContain('class="brand-dot"');
     expect(html).not.toContain('href="/account/password"');
     expect(html).not.toContain('style=');
-    expect(await source("../src/client/provider.ts")).toContain("受渡完了を取り消す");
-    expect(await source("../src/styles/provider.css")).toContain("grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))");
-    expect(await source("../src/client/provider.ts")).toContain("socket?.readyState === WebSocket.OPEN ? 30_000 : 5_000");
+    const client = await source("../src/client/provider.ts");
+    expect(client).toContain("受渡完了を取り消す");
+    expect(client).not.toContain("confirm(");
+    const css = await source("../src/styles/provider.css");
+    expect(css).toContain("--content-max: 1440px");
+    expect(css).toContain(".kanban-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));");
+    expect(css).toContain(".card-actions { display: grid; min-height: 104px;");
+    expect(client).toContain("socket?.readyState === WebSocket.OPEN ? 30_000 : 5_000");
   });
 });
