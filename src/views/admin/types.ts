@@ -4,6 +4,15 @@ export type AdminUser = { id: string; username: string; role: string; staff_type
 export type AdminLocation = { id: number; name: string; slug: string; active: number; sort_order: number; max_preparing_orders: number | null; max_preparing_units: number | null };
 export type AdminOrderSettings = { ordering_enabled: number; order_open_time: string | null; order_close_time: string | null; daily_order_limit: number | null; max_items_per_order: number; max_total_quantity: number; completed_order_retention_days: number };
 export type AdminEvent = { display_number: number | null; location_name: string | null; event_type: string; from_status: string | null; to_status: string | null; username: string | null; details: string | null; created_at: string };
-export type AdminSection = "items" | "orders" | "users" | "settings" | "locations" | "history" | "advanced";
+export type AdminSection = "status" | "items" | "orders" | "users" | "settings" | "locations" | "history" | "advanced";
+export type AdminStatusSummary = {
+  preparing: number;
+  available: number;
+  today_delivered_orders: number;
+  today_units: number;
+  total_delivered_orders: number;
+  total_units: number;
+};
+export type AdminItemSales = { item_id: number; name: string; today_quantity: number; total_quantity: number };
 export type AdminPagination = { page: number; totalPages: number; previousHref: string | null; nextHref: string | null };
 export type AdminPageState = { orderFilter?: "active" | "completed" | "all"; pagination?: AdminPagination };

@@ -1,7 +1,7 @@
 import { Elysia } from "elysia";
 import { getAll, getDb, getOne } from "../../db/database";
 import { authMiddleware, type UserInfo } from "../../middleware/auth";
-import { getCurrentDisplayNumber } from "../../services/numbering";
+import { getCurrentDisplayNumber, todayDate } from "../../services/numbering";
 import type { FlashMessage } from "../../services/flash";
 import { adminPage, type AdminSection } from "../../views/admin";
 import { requireAdmin } from "./shared";
@@ -86,14 +86,32 @@ function renderAdminPage(context: AdminPageContext, activeSection: AdminSection)
            FROM audit_events ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, PAGE_SIZE, (historyPagination.page - 1) * PAGE_SIZE) : [];
 
   const currentNum = activeSection === "advanced" ? getCurrentDisplayNumber() : null;
-  const orderCounts = getOne<{ preparing: number; available: number }>(db, `SELECT
+  const statusSummary = activeSection === "status" ? (getOne<{
+    preparing: number; available: number; today_delivered_orders: number;
+    today_units: number; total_delivered_orders: number; total_units: number;
+  }>(db, `SELECT
       COALESCE(SUM(CASE WHEN status = 'preparing' THEN 1 ELSE 0 END), 0) AS preparing,
-      COALESCE(SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END), 0) AS available
-    FROM orders`) ?? { preparing: 0, available: 0 };
+      COALESCE(SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END), 0) AS available,
+      (SELECT COUNT(DISTINCT order_id) FROM fulfilled_item_sales WHERE sales_date = ?) AS today_delivered_orders,
+      (SELECT COALESCE(SUM(quantity), 0) FROM fulfilled_item_sales WHERE sales_date = ?) AS today_units,
+      (SELECT COUNT(DISTINCT order_id) FROM fulfilled_item_sales) AS total_delivered_orders,
+      (SELECT COALESCE(SUM(quantity), 0) FROM fulfilled_item_sales) AS total_units
+    FROM orders`, todayDate(), todayDate()) ?? {
+      preparing: 0, available: 0, today_delivered_orders: 0,
+      today_units: 0, total_delivered_orders: 0, total_units: 0,
+    }) : undefined;
+  const itemSales = activeSection === "status" ? getAll<{
+    item_id: number; name: string; today_quantity: number; total_quantity: number;
+  }>(db, `SELECT item_id, MAX(item_name) AS name,
+      COALESCE(SUM(CASE WHEN sales_date = ? THEN quantity ELSE 0 END), 0) AS today_quantity,
+      SUM(quantity) AS total_quantity
+    FROM fulfilled_item_sales
+    GROUP BY item_id
+    ORDER BY total_quantity DESC, name ASC`, todayDate()) : [];
 
   const pageState = activeSection === "orders" ? { orderFilter, pagination: orderPagination }
     : activeSection === "history" ? { pagination: historyPagination } : {};
-  return new Response(adminPage(items, orders, users, currentNum, context.securityNonce ?? "", locations, settings, events, consumeFlash(), activeSection, orderCounts, pageState), {
+  return new Response(adminPage(items, orders, users, currentNum, context.securityNonce ?? "", locations, settings, events, consumeFlash(), activeSection, statusSummary, pageState, itemSales), {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
@@ -101,6 +119,7 @@ function renderAdminPage(context: AdminPageContext, activeSection: AdminSection)
 export const adminPageRoutes = new Elysia()
   .use(authMiddleware)
   .get("/admin", () => new Response(null, { status: 302, headers: { Location: "/admin/items" } }))
+  .get("/admin/status", context => renderAdminPage(context as AdminPageContext, "status"))
   .get("/admin/items", context => renderAdminPage(context as AdminPageContext, "items"))
   .get("/admin/orders", context => renderAdminPage(context as AdminPageContext, "orders"))
   .get("/admin/users", context => renderAdminPage(context as AdminPageContext, "users"))

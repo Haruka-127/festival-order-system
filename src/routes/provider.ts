@@ -8,6 +8,7 @@ import { providerPage } from "../views/provider";
 import type { FulfillmentStatus, ProviderTask } from "../contracts/view-models";
 import { recordAuditEvent } from "../services/audit";
 import { utcNowIso } from "../services/time";
+import { todayDate } from "../services/numbering";
 
 function requireProvider(user: UserInfo | null, api = false): UserInfo | Response {
   if (!user) return api
@@ -103,6 +104,21 @@ export const providerRoutes = new Elysia()
         status, status, now, status, status, now, now, id, user.fulfillmentLocationId!, task.status,
       );
       if (result.changes !== 1) throw new Error("状態が別の端末で更新されました");
+      if (status === "handed_over") {
+        runSql(db, `INSERT OR REPLACE INTO fulfilled_item_sales (
+          fulfillment_id, order_id, item_id, item_name, quantity, sales_date,
+          location_id, location_name, completed_at
+        )
+        SELECT f.id, f.order_id, oi.item_id, oi.item_name, oi.quantity, ?,
+               f.location_id, l.name, ?
+        FROM order_fulfillments f
+        JOIN orders o ON o.id = f.order_id
+        JOIN order_items oi ON oi.fulfillment_id = f.id
+        JOIN fulfillment_locations l ON l.id = f.location_id
+        WHERE f.id = ?`, todayDate(), now, id);
+      } else if (task.status === "handed_over") {
+        runSql(db, "DELETE FROM fulfilled_item_sales WHERE fulfillment_id = ?", id);
+      }
       runSql(db, "INSERT INTO fulfillment_events (fulfillment_id, from_status, to_status, changed_by) VALUES (?, ?, ?, ?)", id, task.status, status, user.id);
       recordAuditEvent(db, {
         orderId: task.order_id,

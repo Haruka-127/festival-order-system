@@ -316,4 +316,33 @@ function migrateMultiLocationSchema(db: Database): void {
       PRAGMA user_version = 4;
     `);
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fulfilled_item_sales (
+      fulfillment_id TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      item_id INTEGER NOT NULL,
+      item_name TEXT NOT NULL,
+      quantity INTEGER NOT NULL CHECK(quantity > 0),
+      sales_date TEXT NOT NULL,
+      location_id INTEGER NOT NULL,
+      location_name TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      PRIMARY KEY (fulfillment_id, item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_fulfilled_item_sales_date
+      ON fulfilled_item_sales(sales_date);
+
+    INSERT OR IGNORE INTO fulfilled_item_sales (
+      fulfillment_id, order_id, item_id, item_name, quantity, sales_date,
+      location_id, location_name, completed_at
+    )
+    SELECT f.id, f.order_id, oi.item_id, oi.item_name, oi.quantity, o.display_number_date,
+           f.location_id, l.name, COALESCE(f.handed_over_at, f.updated_at)
+    FROM order_fulfillments f
+    JOIN orders o ON o.id = f.order_id
+    JOIN order_items oi ON oi.fulfillment_id = f.id
+    JOIN fulfillment_locations l ON l.id = f.location_id
+    WHERE f.status = 'handed_over';
+  `);
+  if (schemaVersion < 5) db.exec("PRAGMA user_version = 5;");
 }

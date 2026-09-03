@@ -3,7 +3,7 @@ import { formatDateTime } from "../../services/time";
 import { escapeHtml, eventDescription, renderPagination } from "./helpers";
 import type { AdminEvent, AdminLocation, AdminOrderSettings, AdminPagination } from "./types";
 
-export function renderSettingsSection(settings: AdminOrderSettings, locations: AdminLocation[], orderCounts: { preparing: number; available: number }): string {
+export function renderSettingsSection(settings: AdminOrderSettings, locations: AdminLocation[]): string {
   return `<div id="tab-settings" class="section active">
     <div class="card settings-card">
       <h3>注文受付</h3>
@@ -31,11 +31,6 @@ export function renderSettingsSection(settings: AdminOrderSettings, locations: A
       <a class="settings-link" href="/admin/settings/history"><span><strong>操作履歴</strong><small>注文や提供状態の変更を確認</small></span><span aria-hidden="true">›</span></a>
       <a class="settings-link" href="/admin/settings/advanced"><span><strong>詳細設定・データ管理</strong><small>注文上限、番号、バックアップなど</small></span><span aria-hidden="true">›</span></a>
     </div>
-    <section class="overview" aria-label="現在の注文状況">
-      <div class="overview-item overview-reception ${settings.ordering_enabled ? "is-open" : "is-closed"}"><span class="overview-label">注文受付</span><strong class="overview-value">${settings.ordering_enabled ? "受付中" : "停止中"}</strong></div>
-      <div class="overview-item"><span class="overview-label">準備中</span><strong class="overview-value">${orderCounts.preparing}<small>件</small></strong></div>
-      <div class="overview-item overview-ready"><span class="overview-label">お渡し待ち</span><strong class="overview-value">${orderCounts.available}<small>件</small></strong></div>
-    </section>
   </div>`;
 }
 

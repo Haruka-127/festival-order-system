@@ -50,6 +50,7 @@ test("an order moves through cashier, provider, monitor, customer and administra
 
   const handedOver = await app.handle(request(`/api/provider/fulfillments/${fulfillment.id}/status`, "PATCH", { status: "handed_over" }, providerSession));
   expect(handedOver.status).toBe(200);
+  expect(getOne<{ quantity: number }>(getDb(), "SELECT quantity FROM fulfilled_item_sales WHERE fulfillment_id = ?", fulfillment.id)?.quantity).toBe(2);
   const completedCustomer = await (await app.handle(request(`/api/order/${created.token}`))).json() as { status: string };
   expect(completedCustomer.status).toBe("delivered");
   const completedMonitor = await (await app.handle(request("/api/monitor/board"))).json() as { locations: { waiting: unknown[]; calling: unknown[] }[] };
@@ -57,6 +58,17 @@ test("an order moves through cashier, provider, monitor, customer and administra
 
   const administration = await (await app.handle(request("/admin/orders?status=completed", "GET", undefined, adminSession))).text();
   expect(administration).toContain(`/order/${created.token}`);
+  const status = await (await app.handle(request("/admin/status", "GET", undefined, adminSession))).text();
+  expect(status).toContain("販売実績");
+  expect(status).toContain("テスト商品A");
+  expect(status).toContain("2<small>点</small>");
+
+  const undo = await app.handle(request(`/api/provider/fulfillments/${fulfillment.id}/status`, "PATCH", { status: "ready" }, providerSession));
+  expect(undo.status).toBe(200);
+  expect(getOne(getDb(), "SELECT fulfillment_id FROM fulfilled_item_sales WHERE fulfillment_id = ?", fulfillment.id)).toBeNull();
+  const handOverAgain = await app.handle(request(`/api/provider/fulfillments/${fulfillment.id}/status`, "PATCH", { status: "handed_over" }, providerSession));
+  expect(handOverAgain.status).toBe(200);
+  expect(getOne<{ quantity: number }>(getDb(), "SELECT quantity FROM fulfilled_item_sales WHERE fulfillment_id = ?", fulfillment.id)?.quantity).toBe(2);
   const auditCount = getOne<{ count: number }>(getDb(), "SELECT COUNT(*) AS count FROM audit_events WHERE order_id = ?", created.id)?.count ?? 0;
-  expect(auditCount).toBe(3);
+  expect(auditCount).toBe(5);
 });

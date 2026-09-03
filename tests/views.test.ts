@@ -58,7 +58,7 @@ describe("server-rendered views", () => {
     expect(html).not.toContain('class="status-dot"');
     expect(html).toContain('<a href="/staff" class="btn btn-sm">店員画面</a>');
     expect(html).toContain('<nav class="tabs" aria-label="管理メニュー">');
-    expect(html.match(/class="tab(?: active)?" href="\/admin\//g)).toHaveLength(4);
+    expect(html.match(/class="tab(?: active)?" href="\/admin\//g)).toHaveLength(5);
     expect(html).toContain('class="tab active" href="/admin/items"');
     expect(html).toContain('data-open-dialog="item-editor-1"');
     expect(html).not.toContain('id="tab-orders"');
@@ -76,6 +76,7 @@ describe("server-rendered views", () => {
     expect(css).toContain(".header{width:100%;background:#fff;color:var(--ink);border-bottom:1px solid var(--line)}");
     expect(css).toContain(".dialog-close{width:38px;height:38px");
     expect(css).toContain("gap:4px;margin:16px 0;padding:4px");
+    expect(css).toContain(".tabs{display:grid;grid-template-columns:repeat(5,1fr)");
     expect(css).not.toContain(".overview-reception.is-open{border-color:");
     expect(css).not.toContain(".overview-reception.is-closed{border-color:");
     expect(css).not.toContain(".overview-ready .overview-value{color:");
@@ -98,12 +99,26 @@ describe("server-rendered views", () => {
     const settings = adminPage([], [], [], null, "", undefined, undefined, undefined, [], "settings");
     expect(settings).toContain('href="/admin/settings/locations"');
     expect(settings).toContain('href="/admin/settings/advanced"');
-    expect(settings).toContain('<span class="overview-label">注文受付</span>');
-    expect(settings).toContain('<span class="overview-label">準備中</span>');
-    expect(settings).toContain('<span class="overview-label">お渡し待ち</span>');
-    expect(settings.indexOf("詳細設定・データ管理")).toBeLessThan(settings.indexOf('aria-label="現在の注文状況"'));
+    expect(settings).not.toContain('aria-label="現在の注文状況"');
     expect(settings).not.toContain("営業中によく変更する項目だけを表示しています");
     expect(settings).not.toContain('class="page-heading"');
+
+    const status = adminPage([], [], [], null, "", undefined, undefined, undefined, [], "status", {
+      preparing: 2,
+      available: 1,
+      today_delivered_orders: 3,
+      today_units: 7,
+      total_delivered_orders: 9,
+      total_units: 24,
+    }, {}, [{ item_id: 1, name: "ラーメン", today_quantity: 4, total_quantity: 12 }]);
+    expect(status).toContain('class="tab active" href="/admin/status"');
+    expect(status).toContain('id="tab-status" class="section active"');
+    expect(status).toContain('<span class="overview-label">注文受付</span>');
+    expect(status).toContain('<span class="overview-label">準備中</span>');
+    expect(status).toContain('<span class="overview-label">お渡し待ち</span>');
+    expect(status).toContain("販売実績");
+    expect(status).toContain("ラーメン");
+    expect(status).toContain("24<small>点</small>");
 
     const locations = adminPage([], [], [], null, "", undefined, undefined, undefined, [], "locations");
     expect(locations).toContain('id="location-editor-1" class="editor-dialog"');

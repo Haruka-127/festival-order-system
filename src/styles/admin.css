@@ -18,14 +18,25 @@ input,select,textarea{font:inherit}
 .header .btn:hover{background:var(--surface)}
 .header .inline-form .btn{border-color:var(--green);background:var(--green);color:#fff}
 .header .inline-form .btn:hover{background:var(--green-dark)}
-.overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0 0}
+.overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
 .overview-item{display:grid;min-height:76px;align-content:center;gap:3px;padding:13px 18px;border:1px solid var(--line);border-radius:var(--radius-l);background:#fff}
 .overview-label{font-size:12px;color:var(--muted);font-weight:700}
 .overview-value{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 .overview-value small{margin-left:4px;font-size:11px;font-weight:600;color:var(--muted)}
+.sales-card{padding:0;overflow:hidden}
+.sales-heading{margin:0;padding:22px 22px 16px}
+.sales-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 22px 22px}
+.sales-metric{display:grid;min-height:88px;align-content:center;gap:4px;padding:14px 16px;border-radius:var(--radius-m);background:var(--surface)}
+.sales-metric>span{color:var(--muted);font-size:12px;font-weight:700}
+.sales-metric>strong{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+.sales-metric small,.sales-quantity small{margin-left:4px;color:var(--muted);font-size:11px;font-weight:600}
+.sales-table-heading{margin:0!important;padding:18px 22px 8px;border-top:1px solid var(--line)}
+.sales-table th,.sales-table td{padding-right:22px;padding-left:22px}
+.sales-table th:nth-child(2),.sales-table th:nth-child(3),.sales-table td:nth-child(2),.sales-table td:nth-child(3){width:18%;text-align:right}
+.sales-quantity{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
 .workspace{display:block}
 .content-area{min-width:0}
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:16px 0;padding:4px;background:var(--surface);border:0;border-radius:var(--radius-pill)}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:16px 0;padding:4px;background:var(--surface);border:0;border-radius:var(--radius-pill)}
 .tab{display:flex;align-items:center;justify-content:center;min-height:42px;padding:9px 14px;border:0;border-radius:var(--radius-pill);background:transparent;color:var(--muted);font-size:14px;font-weight:750;text-decoration:none;transition:background-color .15s,color .15s}
 .tab.active{background:#fff;color:var(--green);box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .tab:hover:not(.active){background:#fff;color:var(--ink)}
@@ -178,6 +189,7 @@ details.editor[open]>summary{background:var(--green-soft);border-color:var(--gre
   .location-card-head .row-actions{justify-content:flex-start}
   .form-grid{grid-template-columns:1fr}
   .setting-row{grid-template-columns:1fr;gap:12px;padding:16px}
+  .sales-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
   .settings-card h3{padding:17px 16px 2px}
   .settings-actions{padding:14px 16px}
   .time-range{grid-template-columns:1fr auto 1fr}
@@ -187,6 +199,12 @@ details.editor[open]>summary{background:var(--green-soft);border-color:var(--gre
   :root{--page-gutter:16px}
   .header-inner{min-height:64px;padding-top:12px;padding-bottom:12px}
   .header-brand h1{font-size:18px}
+  .tabs{grid-template-columns:repeat(5,minmax(64px,1fr));overflow-x:auto}
+  .tab{padding-right:5px;padding-left:5px;font-size:12px}
+  .sales-heading{padding:18px 16px 14px}
+  .sales-summary{padding:0 16px 18px}
+  .sales-table-heading{padding-right:16px;padding-left:16px}
+  .sales-table th,.sales-table td{padding-right:16px;padding-left:16px}
 }
 @media(max-width:420px){
   .header .btn{font-size:11px}

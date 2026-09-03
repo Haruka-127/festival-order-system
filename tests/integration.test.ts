@@ -51,6 +51,7 @@ test("admin sections have stable paths", async () => {
   expect(root.headers.get("location")).toBe("/admin/items");
 
   const pages = [
+    ["/admin/status", "status"],
     ["/admin/items", "items"],
     ["/admin/orders", "orders"],
     ["/admin/users", "users"],
@@ -167,6 +168,9 @@ test("cleanup only removes terminal orders older than the retention period and k
   runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token, updated_at) VALUES ('old-terminal', 8001, ?, 'delivered', ?, datetime('now', '-10 days'))", todayDate(), "c".repeat(64));
   runSql(db, "INSERT INTO orders (id, display_number, display_number_date, status, token, updated_at) VALUES ('recent-terminal', 8002, ?, 'delivered', ?, datetime('now', '-1 day'))", todayDate(), "d".repeat(64));
   runSql(db, "INSERT INTO audit_events (order_id, display_number, event_type, to_status) VALUES ('old-terminal', 8001, 'fulfillment_status', 'handed_over')");
+  runSql(db, `INSERT INTO fulfilled_item_sales
+    (fulfillment_id, order_id, item_id, item_name, quantity, sales_date, location_id, location_name, completed_at)
+    VALUES ('old-sale', 'old-terminal', 1, 'ラーメン', 2, ?, 1, '調理場', datetime('now', '-10 days'))`, todayDate());
 
   const response = await app.handle(request("/api/admin/cleanup", "POST", {}, "integration-admin"));
   expect(response.status).toBe(200);
@@ -175,6 +179,7 @@ test("cleanup only removes terminal orders older than the retention period and k
   expect(getOne(db, "SELECT id FROM orders WHERE id = 'old-terminal'")).toBeNull();
   expect(getOne(db, "SELECT id FROM orders WHERE id = 'recent-terminal'")).toBeTruthy();
   expect(getOne(db, "SELECT id FROM audit_events WHERE order_id = 'old-terminal'")).toBeTruthy();
+  expect(getOne(db, "SELECT fulfillment_id FROM fulfilled_item_sales WHERE order_id = 'old-terminal'")).toBeTruthy();
   const backup = new Database(`${config.dataDir}/backups/${cleanupResult.backup}`, { readonly: true });
   expect(backup.query("SELECT id FROM orders WHERE id = 'old-terminal'").get()).toEqual({ id: "old-terminal" });
   backup.close();
