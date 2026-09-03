@@ -21,6 +21,7 @@ function renderActiveSection(
   events: AdminEvent[],
   currentNum: { number: number; date: string } | null,
   pageState: AdminPageState,
+  orderCounts: { preparing: number; available: number },
 ): string {
   if (section === "items") return renderItemsSection(items, locations);
   if (section === "orders") return renderOrdersSection(orders, pageState);
@@ -28,7 +29,7 @@ function renderActiveSection(
   if (section === "locations") return renderLocationsSection(locations);
   if (section === "history") return renderHistorySection(events, pageState.pagination);
   if (section === "advanced") return renderAdvancedSection(settings, currentNum);
-  return renderSettingsSection(settings, locations);
+  return renderSettingsSection(settings, locations, orderCounts);
 }
 
 export function adminPage(
@@ -59,18 +60,14 @@ export function adminPage(
     stylesheet: "admin",
     script: "admin",
     bodyAttributes: { "data-flash-messages": serializedFlashMessages },
-    content: `<header class="header">
+    content: `<a class="skip-link" href="#main-content">本文へ移動</a>
+    <header class="header">
       <div class="header-inner">
-        <div class="header-brand"><div class="header-mark" aria-hidden="true">管</div><div><div class="header-kicker">FESTIVAL ORDER SYSTEM</div><h1>管理画面</h1></div></div>
+        <div class="header-brand"><h1>管理画面</h1></div>
         <div class="header-actions"><a href="/staff" class="btn btn-sm">店員画面</a><form method="POST" action="/logout" class="inline-form"><button type="submit" class="btn btn-sm">ログアウト</button></form></div>
       </div>
     </header>
     <div class="app">
-      <section class="overview" aria-label="現在の注文状況">
-        <div class="overview-item"><span class="status-dot ${settings.ordering_enabled ? "is-open" : "is-closed"}" aria-hidden="true"></span><span class="overview-label">注文</span><strong class="overview-value">${settings.ordering_enabled ? "受付中" : "停止中"}</strong></div>
-        <div class="overview-item"><span class="overview-label">お待ち</span><strong class="overview-value">${counts.preparing}<small> 件</small></strong></div>
-        <div class="overview-item"><span class="overview-label">呼び出し中</span><strong class="overview-value">${counts.available}<small> 件</small></strong></div>
-      </section>
       <div class="workspace">
         <nav class="tabs" aria-label="管理メニュー">
           <a class="${tabClass("items")}" href="/admin/items" ${activeMainSection === "items" ? 'aria-current="page"' : ""}>商品</a>
@@ -78,7 +75,7 @@ export function adminPage(
           <a class="${tabClass("users")}" href="/admin/users" ${activeMainSection === "users" ? 'aria-current="page"' : ""}>スタッフ</a>
           <a class="${tabClass("settings")}" href="/admin/settings" ${activeMainSection === "settings" ? 'aria-current="page"' : ""}>設定</a>
         </nav>
-        <main class="content-area">${renderActiveSection(activeSection, items, orders, users, locations, settings, events, currentNum, pageState)}</main>
+        <main id="main-content" class="content-area">${renderActiveSection(activeSection, items, orders, users, locations, settings, events, currentNum, pageState, counts)}</main>
       </div>
     </div>
     <div id="toast-container"></div>`,
