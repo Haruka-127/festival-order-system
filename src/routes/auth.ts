@@ -12,7 +12,7 @@ const loginUsernameLimiter = new LoginRateLimiter(20);
 const DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=2,p=1$oYqXuWeZfV6iBuu8r7w8JmLbbzDuAtjPIataUBNhvjs$9Ep/Em/QRnNBTNTG9/5V7zD2u9vU2gYsM8S6X9mMJbU";
 
 function homeForRole(role: string): string {
-  if (role === "admin") return "/admin/items";
+  if (role === "admin") return "/admin/status";
   if (role === "provider") return "/provider";
   return "/staff";
 }

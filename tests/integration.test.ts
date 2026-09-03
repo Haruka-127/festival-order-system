@@ -48,7 +48,11 @@ test("unauthenticated API requests return JSON 401 instead of redirecting", asyn
 test("admin sections have stable paths", async () => {
   const root = await app.handle(request("/admin", "GET", undefined, "integration-admin"));
   expect(root.status).toBe(302);
-  expect(root.headers.get("location")).toBe("/admin/items");
+  expect(root.headers.get("location")).toBe("/admin/status");
+
+  const login = await app.handle(request("/login", "GET", undefined, "integration-admin"));
+  expect(login.status).toBe(302);
+  expect(login.headers.get("location")).toBe("/admin/status");
 
   const pages = [
     ["/admin/status", "status"],

@@ -118,7 +118,7 @@ function renderAdminPage(context: AdminPageContext, activeSection: AdminSection)
 
 export const adminPageRoutes = new Elysia()
   .use(authMiddleware)
-  .get("/admin", () => new Response(null, { status: 302, headers: { Location: "/admin/items" } }))
+  .get("/admin", () => new Response(null, { status: 302, headers: { Location: "/admin/status" } }))
   .get("/admin/status", context => renderAdminPage(context as AdminPageContext, "status"))
   .get("/admin/items", context => renderAdminPage(context as AdminPageContext, "items"))
   .get("/admin/orders", context => renderAdminPage(context as AdminPageContext, "orders"))
