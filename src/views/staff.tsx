@@ -13,27 +13,31 @@ return pageDocument({
     script: "staff",
     bodyAttributes: { "data-current-date": todayDate(), "data-display-digits": String(config.displayNumberDigits) },
     content: `
+<a class="skip-link" href="#main-content">本文へ移動</a>
 <header class="topbar">
-    <div class="brand"><div class="brand-mark" aria-hidden="true">注</div><div><div class="brand-kicker">FESTIVAL ORDER SYSTEM</div><h1>注文受付</h1></div></div>
+  <div class="topbar-inner">
+    <div class="brand"><h1>注文受付</h1></div>
     <div class="topbar-actions">
       <span class="current-time">${formatDateTime(new Date())}</span>
       <form method="POST" action="/logout" class="inline-form"><button type="submit" class="btn">ログアウト</button></form>
     </div>
+  </div>
   </header>
-  <div class="app">
-    <div class="menu-panel">
-      <div class="panel-heading"><div><div class="panel-kicker">ORDER ENTRY</div><h2>新しい注文</h2></div><p class="panel-note">商品ボタンまたは数字キーで追加できます</p></div>
+  <main id="main-content" class="app">
+    <section class="menu-panel" aria-labelledby="new-order-heading">
+      <div class="panel-heading reception-heading"><h2 id="new-order-heading">新しい注文</h2></div>
 
       <div id="cart" class="cart">
-        <h2>カート</h2>
+        <div class="cart-heading"><h3>カート</h3><span id="cart-count" class="count-badge">0点</span></div>
         <div id="cart-items" aria-live="polite">
           <div class="empty-orders">商品を選択してください</div>
         </div>
         <div id="cart-total" class="cart-total" hidden>
-          <span>合計</span>
-          <span id="cart-count">0点</span>
+          <span>合計数量</span>
+          <strong id="cart-summary-count">0点</strong>
         </div>
-        <button id="submit-order" class="btn btn-success btn-lg btn-block mt-2" hidden data-action="submit-order">
+        <p class="keyboard-help"><kbd>1</kbd>〜<kbd>0</kbd> 商品追加　<kbd>Enter</kbd> 注文確定</p>
+        <button id="submit-order" class="btn btn-success btn-lg btn-block" disabled data-action="submit-order">
           注文を確定する
         </button>
       </div>
@@ -57,22 +61,22 @@ return pageDocument({
           </button>`;
         }).join("")}
       </div>
-    </div>
+    </section>
 
-    <div class="orders-panel">
+    <section class="orders-panel" aria-labelledby="current-orders-heading">
       <div class="panel-heading">
-        <div><div class="panel-kicker">ORDER STATUS</div><h2>現在の注文</h2></div>
-        <div><div id="last-updated" class="panel-note">更新確認中</div><div class="tabs" id="order-tabs" role="tablist" aria-label="注文状態で絞り込み">
+        <div><h2 id="current-orders-heading">現在の注文</h2><div id="last-updated" class="panel-note">更新確認中</div></div>
+        <div class="tabs" id="order-tabs" role="tablist" aria-label="注文状態で絞り込み">
           <button class="tab active" data-filter="all" role="tab" aria-selected="true">すべて</button>
           <button class="tab" data-filter="preparing" role="tab" aria-selected="false">準備中</button>
           <button class="tab" data-filter="available" role="tab" aria-selected="false">提供可能</button>
-        </div></div>
+        </div>
       </div>
       <div id="order-list">
         ${orders.length === 0 ? '<div class="empty-orders">現在、注文はありません</div>' : orders.map(order => orderCard(order)).join("")}
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 
   <div id="modal" class="modal-overlay" hidden>
     <div class="modal-content" id="modal-content" role="dialog" aria-modal="true" aria-label="注文受付結果">

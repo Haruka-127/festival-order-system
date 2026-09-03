@@ -28,6 +28,7 @@ describe("server-rendered views", () => {
     expect(html).toContain('id="cart-items" aria-live="polite"');
     expect(html).toContain('id="menu-grid"');
     expect(html).toContain('id="order-list"');
+    expect(html).not.toContain('class="brand-dot"');
     expect(html).not.toContain('href="/account/password"');
     expect(html).not.toContain('style=');
     const client = await source("../src/client/staff.ts");
@@ -38,6 +39,7 @@ describe("server-rendered views", () => {
     expect(client).not.toContain(".style.");
     const css = await source("../src/styles/staff.css");
     expect(css).toContain("--green:#166534");
+    expect(css).toContain("--content-max: 1440px");
     expect(css).toContain(".cart-qty button{width:44px;height:44px");
   });
 

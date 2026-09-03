@@ -83,7 +83,9 @@ function updateCart(): void {
   if (!entries.length) {
     showEmpty(container, "商品を選択してください");
     total.hidden = true;
-    submitButton.hidden = true;
+    requiredElement("cart-count").textContent = "0点";
+    requiredElement("cart-summary-count").textContent = "0点";
+    submitButton.disabled = true;
     return;
   }
   let count = 0;
@@ -101,7 +103,8 @@ function updateCart(): void {
   container.replaceChildren(...rows);
   total.hidden = false;
   requiredElement("cart-count").textContent = `${count}点`;
-  submitButton.hidden = false;
+  requiredElement("cart-summary-count").textContent = `${count}点`;
+  submitButton.disabled = submitting;
 }
 
 function padNumber(value: number): string {
@@ -151,7 +154,7 @@ async function submitOrder(): Promise<void> {
     showToast("通信エラーが発生しました");
   } finally {
     submitting = false;
-    button.disabled = false;
+    button.disabled = cart.size === 0;
     button.textContent = "注文を確定する";
   }
 }
