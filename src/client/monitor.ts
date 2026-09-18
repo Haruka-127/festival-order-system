@@ -1,4 +1,5 @@
 import { paginateNumberGroups, type MeasuredNumberGroup, type NumberGroup, type NumberPage } from "./monitor-layout";
+import { MonitorCallTracker, MonitorChime } from "./monitor-sound";
 
 type BoardEntry = { fulfillment_id: string; display_number: number; display_number_date?: string };
 type BoardLocation = { id: number; name: string; waiting: BoardEntry[]; calling: BoardEntry[] };
@@ -20,6 +21,7 @@ const columns: Record<ColumnKey, ColumnState> = {
 const narrowScreen = window.matchMedia("(max-width: 640px)");
 let layoutFrame: number | null = null;
 let reconnectDelay = 3000;
+let snapshotVersion = 0;
 const currentDate = document.body.dataset.currentDate ?? "";
 const digits = Number(document.body.dataset.displayDigits ?? "3");
 
@@ -30,6 +32,21 @@ function requiredElement(id: string): HTMLElement {
 }
 
 const pad = (value: number): string => String(value).padStart(digits, "0");
+const callTracker = new MonitorCallTracker();
+const soundNotice = requiredElement("monitor-sound-notice");
+const soundMessage = requiredElement("monitor-sound-message");
+const soundEnable = requiredElement("monitor-sound-enable") as HTMLButtonElement;
+const chime = new MonitorChime(requiredElement("monitor-chime") as HTMLAudioElement, state => {
+  soundNotice.hidden = state === "ready";
+  soundEnable.disabled = state === "retrying";
+  soundEnable.textContent = state === "unavailable" ? "呼び出し音を再試行" : "呼び出し音を有効にする";
+  soundMessage.textContent = state === "blocked"
+    ? "ブラウザが呼び出し音の自動再生を制限しています。有効にすると確認音が1回鳴ります。"
+    : state === "unavailable"
+      ? "呼び出し音を再生できませんでした。通信状況を確認して再試行してください。"
+      : state === "retrying" ? "確認音を再生しています…" : "";
+});
+soundEnable.addEventListener("click", () => chime.retry());
 
 function groupsFor(key: ColumnKey): NumberGroup<BoardEntry>[] {
   return board.locations.filter(location => location[key].length).map(location => ({
@@ -139,17 +156,21 @@ function scheduleLayout(): void {
   });
 }
 
-function applyBoard(next: Board, animate = true): void {
+function applyBoard(next: Board, animate = true, silent = false): void {
   if ((next.order_generation ?? 0) < (board.order_generation ?? 0)) return;
+  snapshotVersion += 1;
   if ((next.order_generation ?? 0) > (board.order_generation ?? 0)) {
     for (const state of Object.values(columns)) { state.pages = []; state.page = 0; }
+    chime.stop();
   }
+  const shouldChime = callTracker.accept(next, silent);
   const nextKeys = new Set<string>();
   for (const location of next.locations) for (const key of ["waiting", "calling"] as const) for (const entry of location[key]) nextKeys.add(`${key}:${entry.fulfillment_id}`);
   newIds = animate ? new Set([...nextKeys].filter(key => !knownKeys.has(key)).map(key => key.slice(key.indexOf(":") + 1))) : new Set();
   knownKeys = nextKeys;
   board = next;
   scheduleLayout();
+  if (shouldChime) chime.notify();
 }
 
 function setConnection(message: string, offline: boolean): void {
@@ -165,10 +186,14 @@ function scheduleSync(): void {
 }
 
 async function load(): Promise<void> {
+  const version = snapshotVersion;
   try {
     const response = await fetch("/api/monitor/board");
     if (response.ok) {
       const next = await response.json() as Board;
+      // A polling response started before a WebSocket update must not restore
+      // old waiting tasks and make the same transition ring a second time.
+      if (version !== snapshotVersion) return;
       applyBoard({ locations: Array.isArray(next.locations) ? next.locations : [], order_generation: next.order_generation }, knownKeys.size > 0);
       setConnection(socket?.readyState === WebSocket.OPEN ? "リアルタイム接続済み" : "同期済み", false);
     }
@@ -182,24 +207,35 @@ async function load(): Promise<void> {
 function connect(): void {
   if (socket && socket.readyState <= WebSocket.OPEN) return;
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${protocol}//${location.host}/ws/monitor`);
-  socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); scheduleSync(); };
-  socket.onmessage = event => {
+  const connection = new WebSocket(`${protocol}//${location.host}/ws/monitor`);
+  socket = connection;
+  let initialSnapshot = true;
+  connection.onopen = () => {
+    if (socket !== connection) return;
+    snapshotVersion += 1;
+    reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); scheduleSync();
+  };
+  connection.onmessage = event => {
+    if (socket !== connection) return;
     try {
       const data = JSON.parse(String(event.data)) as { type?: string; locations?: BoardLocation[]; order_generation?: number };
-      if (data.type === "monitor_update") applyBoard({ locations: Array.isArray(data.locations) ? data.locations : [], order_generation: data.order_generation });
+      if (data.type === "monitor_update") {
+        applyBoard({ locations: Array.isArray(data.locations) ? data.locations : [], order_generation: data.order_generation }, true, initialSnapshot);
+        initialSnapshot = false;
+      }
     } catch (error) {
       console.warn("Invalid monitor WebSocket message", error);
     }
   };
-  socket.onclose = () => {
+  connection.onclose = () => {
+    if (socket !== connection) return;
     socket = null;
     setConnection("再接続中", true);
     scheduleSync();
     setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
   };
-  socket.onerror = () => socket?.close();
+  connection.onerror = () => connection.close();
 }
 
 setInterval(() => {

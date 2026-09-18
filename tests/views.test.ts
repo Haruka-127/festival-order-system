@@ -15,6 +15,10 @@ function expectExternalAssets(html: string, page: string): void {
   expect(html).not.toContain("<style>");
   expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/i);
   expect(html).not.toMatch(/\son(?:click|change|submit|input|keydown)=/i);
+  if (page !== "monitor") {
+    expect(html).not.toContain("monitor-call-chime.wav");
+    expect(html).not.toContain("monitor-sound-notice");
+  }
 }
 
 describe("server-rendered views", () => {
@@ -148,6 +152,14 @@ describe("server-rendered views", () => {
     const html = monitorPage();
     expectExternalAssets(html, "monitor");
     expect(html).toContain('id="connection"');
+    expect(html).toContain('id="monitor-chime"');
+    expect(html).toContain('src="/assets/monitor-call-chime.wav"');
+    expect(html).not.toContain("monitor-sound-toggle");
+    expect(html).not.toContain("monitor-sound-status");
+    expect(html).toMatch(/<section[^>]*id="monitor-sound-notice"[^>]*\bhidden/);
+    expect(html).toContain('id="monitor-sound-enable"');
+    expect(html).toContain('role="status" aria-live="polite"');
+    expect(html).not.toContain("autoplay");
     expect(await source("../src/styles/monitor.css")).toContain(".board{grid-template-columns:1fr}");
     const client = await source("../src/client/monitor.ts");
     expect(client).toContain("CONNECTED_SYNC_INTERVAL = 60_000");

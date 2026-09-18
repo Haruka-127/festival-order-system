@@ -21,6 +21,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans
 .date-label{margin-top:2px;font-size:clamp(12px,.24em,18px);line-height:1.2;color:#991b1b;letter-spacing:0;white-space:nowrap}
 .guidance{border-top:2px solid #111827;padding:clamp(12px,1.8vh,22px) 24px;text-align:center;font-size:clamp(20px,1.8vw,34px);font-weight:700;line-height:1.25}
 .monitor-status{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:4px 14px 8px;color:#6b7280;font-size:12px;line-height:1.3}
+.sound-notice{flex-basis:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid #f59e0b;border-radius:6px;background:#fffbeb;color:#78350f;font-size:14px;line-height:1.5}
+.sound-notice[hidden]{display:none}
+.sound-notice-body{min-width:0}
+.sound-notice p{margin:0}
+.sound-notice summary{width:fit-content;margin-top:4px;cursor:pointer;text-decoration:underline}
+.sound-notice details p{margin-top:4px}
+.sound-notice button{flex:none;min-height:44px;border:0;border-radius:4px;padding:10px 16px;background:#92400e;color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.sound-notice button:disabled{opacity:.65;cursor:wait}
+.sound-notice button:focus-visible,.sound-notice summary:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
 .page{margin-left:auto;text-align:right}
 .connection.offline{color:#b91c1c}
 .number.new .number-label{animation:number-fade-in 400ms ease-out}
@@ -32,6 +41,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans
   .guidance{padding:8px 16px;font-size:18px}
 }
 @media(max-width:640px){
+  .sound-notice{align-items:stretch;flex-direction:column}
   html,body{height:auto;min-height:100%;overflow:auto}
   .screen{height:auto;min-height:100dvh}
   .board{grid-template-columns:1fr}
