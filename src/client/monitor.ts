@@ -1,11 +1,11 @@
-export {};
+import { paginateNumberGroups, type MeasuredNumberGroup, type NumberGroup, type NumberPage } from "./monitor-layout";
 
 type BoardEntry = { fulfillment_id: string; display_number: number; display_number_date?: string };
 type BoardLocation = { id: number; name: string; waiting: BoardEntry[]; calling: BoardEntry[] };
 type Board = { locations: BoardLocation[]; order_generation?: number };
-type LocatedEntry = BoardEntry & { location_id: number; location_name: string };
+type ColumnKey = "waiting" | "calling";
+type ColumnState = { pages: NumberPage<BoardEntry>[]; page: number };
 
-const PAGE_SIZE = 10;
 const PAGE_INTERVAL = 8000;
 const CONNECTED_SYNC_INTERVAL = 60_000;
 const DISCONNECTED_SYNC_INTERVAL = 15_000;
@@ -14,8 +14,11 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let board: Board = { locations: [] };
 let knownKeys = new Set<string>();
 let newIds = new Set<string>();
-let waitingPage = 0;
-let callingPage = 0;
+const columns: Record<ColumnKey, ColumnState> = {
+  waiting: { pages: [], page: 0 }, calling: { pages: [], page: 0 },
+};
+const narrowScreen = window.matchMedia("(max-width: 640px)");
+let layoutFrame: number | null = null;
 let reconnectDelay = 3000;
 const currentDate = document.body.dataset.currentDate ?? "";
 const digits = Number(document.body.dataset.displayDigits ?? "3");
@@ -28,64 +31,125 @@ function requiredElement(id: string): HTMLElement {
 
 const pad = (value: number): string => String(value).padStart(digits, "0");
 
-function flatten(key: "waiting" | "calling"): LocatedEntry[] {
-  return board.locations.flatMap(location => location[key].map(entry => ({ ...entry, location_id: location.id, location_name: location.name })));
-}
-
-function renderColumn(elementId: string, entries: LocatedEntry[], currentPage: number): void {
-  const root = requiredElement(elementId);
-  const visible = entries.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
-  root.classList.toggle("dense", visible.length > 7);
-  if (!visible.length) { root.replaceChildren(); return; }
-  const groups: { id: number; name: string; entries: LocatedEntry[] }[] = [];
-  for (const entry of visible) {
-    let group = groups.at(-1);
-    if (!group || group.id !== entry.location_id) {
-      group = { id: entry.location_id, name: entry.location_name, entries: [] };
-      groups.push(group);
-    }
-    group.entries.push(entry);
-  }
-  root.replaceChildren(...groups.map(group => {
-    const section = document.createElement("section"); section.className = "location";
-    const heading = document.createElement("h2"); heading.className = "location-name"; heading.textContent = group.name;
-    const numbers = document.createElement("div"); numbers.className = "numbers";
-    for (const entry of group.entries) {
-      const number = document.createElement("div"); number.className = `number${newIds.has(entry.fulfillment_id) ? " new" : ""}`; number.dataset.id = entry.fulfillment_id; number.append(pad(entry.display_number));
-      if (entry.display_number_date && entry.display_number_date !== currentDate) {
-        const date = document.createElement("span"); date.className = "date-label"; date.textContent = entry.display_number_date; number.append(date);
-      }
-      numbers.append(number);
-    }
-    section.append(heading, numbers);
-    return section;
+function groupsFor(key: ColumnKey): NumberGroup<BoardEntry>[] {
+  return board.locations.filter(location => location[key].length).map(location => ({
+    id: location.id, name: location.name,
+    entries: [...location[key]].sort((left, right) =>
+      (left.display_number_date ?? currentDate).localeCompare(right.display_number_date ?? currentDate)
+      || left.display_number - right.display_number
+      || left.fulfillment_id.localeCompare(right.fulfillment_id)),
   }));
 }
 
-function render(): void {
-  const waiting = flatten("waiting");
-  const calling = flatten("calling");
-  const waitingPages = Math.max(1, Math.ceil(waiting.length / PAGE_SIZE));
-  const callingPages = Math.max(1, Math.ceil(calling.length / PAGE_SIZE));
-  if (waitingPage >= waitingPages) waitingPage = 0;
-  if (callingPage >= callingPages) callingPage = 0;
-  renderColumn("waiting", waiting, waitingPage);
-  renderColumn("calling", calling, callingPage);
+function groupElement(group: NumberGroup<BoardEntry>, animate: boolean): HTMLElement {
+  const section = document.createElement("section"); section.className = "location";
+  const heading = document.createElement("h2"); heading.className = "location-name"; heading.textContent = group.name;
+  const numbers = document.createElement("div"); numbers.className = "numbers";
+  for (const entry of group.entries) {
+    const number = document.createElement("div");
+    number.className = `number${animate && newIds.has(entry.fulfillment_id) ? " new" : ""}`;
+    number.dataset.id = entry.fulfillment_id;
+    const label = document.createElement("span"); label.className = "number-label"; label.textContent = pad(entry.display_number);
+    number.append(label);
+    if (entry.display_number_date && entry.display_number_date !== currentDate) {
+      const date = document.createElement("span"); date.className = "date-label"; date.textContent = entry.display_number_date;
+      number.append(date);
+    }
+    numbers.append(number);
+  }
+  section.append(heading, numbers);
+  return section;
+}
+
+function measureColumn(key: ColumnKey): void {
+  const root = requiredElement(key);
+  if (root.clientWidth === 0) return;
+  const state = columns[key];
+  const anchor = state.pages[state.page]?.groups[0]?.entries[0]?.fulfillment_id;
+  const groups = groupsFor(key);
+  // Measure without animation, using exactly the same markup and styles as the
+  // displayed page. Read and replace in one frame so all-data markup is not painted.
+  root.classList.remove("is-overflowing");
+  root.style.removeProperty("--number-font-size");
+  root.style.removeProperty("--number-min-width");
+  const sections = groups.map(group => groupElement(group, false));
+  root.replaceChildren(...sections);
+  if (!sections.length) { state.pages = [{ groups: [], height: 0, overflowing: false }]; state.page = 0; return; }
+  const style = getComputedStyle(root);
+  const width = root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const labels = [...root.querySelectorAll<HTMLElement>(".number-label, .date-label")];
+  const labelWidth = () => labels.reduce((maximum, label) => Math.max(maximum, label.getBoundingClientRect().width), 0);
+  const widest = labelWidth();
+  if (widest > width) {
+    const fontSize = parseFloat(getComputedStyle(sections[0]!.querySelector(".numbers")!).fontSize);
+    root.style.setProperty("--number-font-size", `${fontSize * Math.max(1, width - 2) / widest}px`);
+  }
+  root.style.setProperty("--number-min-width", `${Math.min(width, Math.ceil(labelWidth()) + 4)}px`);
+  const measured = groups.map((group, groupIndex): MeasuredNumberGroup<BoardEntry> => {
+    const section = sections[groupIndex]!;
+    const numbers = section.querySelector<HTMLElement>(".numbers")!;
+    const rows: MeasuredNumberGroup<BoardEntry>["rows"] = [];
+    let previousTop = -Infinity;
+    [...numbers.children].forEach((element, index) => {
+      const rectangle = element.getBoundingClientRect();
+      if (Math.abs(rectangle.top - previousTop) > 1) {
+        rows.push({ entries: [], height: 0 });
+        previousTop = rectangle.top;
+      }
+      const row = rows.at(-1)!;
+      row.entries.push(group.entries[index]!);
+      row.height = Math.max(row.height, rectangle.height);
+    });
+    return { id: group.id, name: group.name, headingHeight: numbers.getBoundingClientRect().top - section.getBoundingClientRect().top, rows };
+  });
+  const rowGap = parseFloat(getComputedStyle(sections[0]!.querySelector(".numbers")!).rowGap);
+  // Narrow screens use the normal document scroll; desktop columns have a fixed
+  // available height, including all heading, date-label and spacing costs.
+  const height = narrowScreen.matches ? Infinity : Math.max(0, root.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - 1);
+  state.pages = paginateNumberGroups(measured, height, parseFloat(style.rowGap), rowGap);
+  const anchoredPage = anchor ? state.pages.findIndex(page => page.groups.some(group => group.entries.some(entry => entry.fulfillment_id === anchor))) : -1;
+  state.page = anchoredPage >= 0 ? anchoredPage : Math.min(state.page, state.pages.length - 1);
+}
+
+function renderPages(): void {
   const indicators: string[] = [];
-  if (waitingPages > 1) indicators.push(`待 ${waitingPage + 1}/${waitingPages}`);
-  if (callingPages > 1) indicators.push(`呼 ${callingPage + 1}/${callingPages}`);
+  for (const key of ["waiting", "calling"] as const) {
+    const state = columns[key];
+    const page = state.pages[state.page];
+    const root = requiredElement(key);
+    root.classList.toggle("is-overflowing", page?.overflowing ?? false);
+    root.replaceChildren(...(page?.groups ?? []).map(group => groupElement(group, true)));
+    root.scrollTop = 0;
+    if (state.pages.length > 1) {
+      const total = board.locations.reduce((sum, location) => sum + location[key].length, 0);
+      indicators.push(`${key === "waiting" ? "待" : "呼"} ${state.page + 1}/${state.pages.length}（全${total}件）`);
+    }
+  }
   requiredElement("page").textContent = indicators.join(" ・ ");
   newIds.clear();
 }
 
+function scheduleLayout(): void {
+  if (layoutFrame !== null) return;
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = null;
+    measureColumn("waiting");
+    measureColumn("calling");
+    renderPages();
+  });
+}
+
 function applyBoard(next: Board, animate = true): void {
   if ((next.order_generation ?? 0) < (board.order_generation ?? 0)) return;
+  if ((next.order_generation ?? 0) > (board.order_generation ?? 0)) {
+    for (const state of Object.values(columns)) { state.pages = []; state.page = 0; }
+  }
   const nextKeys = new Set<string>();
   for (const location of next.locations) for (const key of ["waiting", "calling"] as const) for (const entry of location[key]) nextKeys.add(`${key}:${entry.fulfillment_id}`);
   newIds = animate ? new Set([...nextKeys].filter(key => !knownKeys.has(key)).map(key => key.slice(key.indexOf(":") + 1))) : new Set();
   knownKeys = nextKeys;
   board = next;
-  render();
+  scheduleLayout();
 }
 
 function setConnection(message: string, offline: boolean): void {
@@ -139,10 +203,25 @@ function connect(): void {
 }
 
 setInterval(() => {
-  const waitingPages = Math.max(1, Math.ceil(flatten("waiting").length / PAGE_SIZE));
-  const callingPages = Math.max(1, Math.ceil(flatten("calling").length / PAGE_SIZE));
-  if (waitingPages > 1) waitingPage = (waitingPage + 1) % waitingPages;
-  if (callingPages > 1) callingPage = (callingPage + 1) % callingPages;
-  if (waitingPages > 1 || callingPages > 1) render();
+  if (layoutFrame !== null) return;
+  let changed = false;
+  for (const state of Object.values(columns)) {
+    if (state.pages.length > 1) { state.page = (state.page + 1) % state.pages.length; changed = true; }
+  }
+  if (changed) renderPages();
 }, PAGE_INTERVAL);
+const sizes = new Map<Element, string>();
+const observer = new ResizeObserver(entries => {
+  for (const entry of entries) {
+    const size = `${entry.contentRect.width}:${narrowScreen.matches ? "auto" : entry.contentRect.height}`;
+    if (sizes.get(entry.target) === size) continue;
+    sizes.set(entry.target, size);
+    scheduleLayout();
+  }
+});
+observer.observe(requiredElement("waiting"));
+observer.observe(requiredElement("calling"));
+window.addEventListener("resize", scheduleLayout);
+document.fonts.ready.then(scheduleLayout);
+document.fonts.addEventListener("loadingdone", scheduleLayout);
 void load().then(connect);

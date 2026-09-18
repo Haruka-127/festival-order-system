@@ -16,9 +16,8 @@ return pageDocument({
       <section class="column calling"><h1 class="title">お呼び出し中の番号</h1><div id="calling" class="content"></div></section>
     </main>
     <footer class="guidance">お手元の受付番号をご確認ください。番号が表示されたブースで商品をお受け取りください。</footer>
+    <div class="monitor-status"><div id="connection" class="connection">接続中</div><div id="page" class="page" aria-label="表示ページ"></div></div>
   </div>
-  <div id="page" class="page"></div>
-  <div id="connection" class="connection">接続中</div>
     `,
   });
 }
