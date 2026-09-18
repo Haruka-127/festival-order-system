@@ -70,6 +70,26 @@ export function initializeDatabaseSchema(db: Database) {
 
   migrateMultiLocationSchema(db);
 
+  if (!hasColumn(db, "app_settings", "order_generation")) {
+    db.exec("ALTER TABLE app_settings ADD COLUMN order_generation INTEGER NOT NULL DEFAULT 0 CHECK(order_generation >= 0);");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_archives (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      actor_username TEXT NOT NULL,
+      order_count INTEGER NOT NULL,
+      active_count INTEGER NOT NULL,
+      oldest_order_at TEXT,
+      newest_order_at TEXT,
+      bytes INTEGER NOT NULL,
+      format_version INTEGER NOT NULL DEFAULT 1,
+      display_digits INTEGER NOT NULL
+    );
+  `);
+  const currentVersion = db.prepare<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;
+  if (currentVersion < 6) db.exec("PRAGMA user_version = 6;");
+
   db.exec(`
     INSERT INTO number_sequences (display_number_date, next_number, updated_at)
     SELECT display_number_date, MAX(display_number) + 1, datetime('now')

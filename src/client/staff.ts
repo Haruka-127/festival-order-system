@@ -1,6 +1,6 @@
 export {};
 
-type CartDraft = { items?: [number, number][]; requestId?: string | null; signature?: string };
+type CartDraft = { items?: [number, number][]; requestId?: string | null; signature?: string; generation?: number };
 type OrderItem = { name: string; quantity: number };
 type Fulfillment = { id: string; location_name: string; status: string; items: OrderItem[] };
 type StaffOrder = {
@@ -23,6 +23,11 @@ function createElement<K extends keyof HTMLElementTagNameMap>(tag: K, className 
 
 let savedDraft: CartDraft | null = null;
 try { savedDraft = JSON.parse(sessionStorage.getItem("staff-order-draft") || "null") as CartDraft | null; } catch {}
+let orderGeneration = Number(document.body.dataset.orderGeneration ?? "0");
+if (savedDraft && (savedDraft.generation ?? 0) !== orderGeneration) {
+  savedDraft = null;
+  sessionStorage.removeItem("staff-order-draft");
+}
 const cart = new Map<number, number>(Array.isArray(savedDraft?.items) ? savedDraft.items : []);
 let submitting = false;
 let pendingRequestId = savedDraft?.requestId ?? null;
@@ -45,7 +50,18 @@ function fulfillmentLine(fulfillment: Fulfillment): HTMLElement {
 
 function saveDraft(): void {
   if (cart.size === 0 && !pendingRequestId) { sessionStorage.removeItem("staff-order-draft"); return; }
-  sessionStorage.setItem("staff-order-draft", JSON.stringify({ items: [...cart.entries()], requestId: pendingRequestId, signature: pendingPayloadSignature }));
+  sessionStorage.setItem("staff-order-draft", JSON.stringify({ items: [...cart.entries()], requestId: pendingRequestId, signature: pendingPayloadSignature, generation: orderGeneration }));
+}
+
+function applyOrderGeneration(generation: number): boolean {
+  if (!Number.isSafeInteger(generation) || generation <= orderGeneration) return false;
+  orderGeneration = generation;
+  cart.clear();
+  invalidatePendingRequest();
+  updateCart();
+  requiredElement("modal").hidden = true;
+  showToast("注文履歴がリセットされました。新しい注文の商品を選択してください");
+  return true;
 }
 
 function invalidatePendingRequest(): void {
@@ -124,6 +140,7 @@ async function submitOrder(): Promise<void> {
   button.disabled = true;
   button.textContent = "送信中...";
   try {
+    const submittedGeneration = orderGeneration;
     const items = [...cart.entries()].map(([id, quantity]) => ({ item_id: id, quantity }));
     const signature = JSON.stringify(items);
     if (!pendingRequestId || pendingPayloadSignature !== signature) {
@@ -131,14 +148,16 @@ async function submitOrder(): Promise<void> {
       pendingPayloadSignature = signature;
       saveDraft();
     }
-    const response = await fetch("/api/staff/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, client_request_id: pendingRequestId }) });
+    const response = await fetch("/api/staff/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, client_request_id: pendingRequestId, order_generation: submittedGeneration }) });
     if (response.status === 401) { location.href = "/login"; return; }
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "エラーが発生しました" })) as { error?: string };
+      const error = await response.json().catch(() => ({ error: "エラーが発生しました" })) as { error?: string; code?: string; order_generation?: number };
+      if (error.code === "orders_reset" && error.order_generation !== undefined) applyOrderGeneration(error.order_generation);
       showToast(error.error ?? "エラーが発生しました");
       return;
     }
     const data = await response.json() as { display_number: number };
+    if (submittedGeneration !== orderGeneration) return;
     cart.clear();
     invalidatePendingRequest();
     updateCart();
@@ -215,7 +234,11 @@ async function refreshOrders(): Promise<void> {
     const response = await fetch("/api/staff/orders");
     if (response.status === 401) { location.href = "/login"; return; }
     if (!response.ok) return;
+    const generation = Number(response.headers.get("X-Order-Generation") ?? "0");
+    if (generation < orderGeneration) return;
+    applyOrderGeneration(generation);
     const orders = await response.json() as StaffOrder[];
+    if (generation < orderGeneration) return;
     const container = requiredElement("order-list");
     if (!orders.length) { showEmpty(container, "現在、注文はありません"); return; }
     const cards = orders.map(order => {

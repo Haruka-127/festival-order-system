@@ -41,7 +41,9 @@ test("legacy database is migrated to multi-location schema without losing orders
   expect(user.staff_type).toBe("cashier");
   expect(task).toEqual({ status: "ready", location_id: 1 });
   expect(orderItem.fulfillment_id).toBe("legacy-legacy-order");
-  expect(migrated.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
+  expect(migrated.query("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+  expect(migrated.query("SELECT order_generation FROM app_settings WHERE id = 1").get()).toEqual({ order_generation: 0 });
+  expect(migrated.query("SELECT COUNT(*) AS count FROM order_archives").get()).toEqual({ count: 0 });
   expect(migrated.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_flash_messages'").get()).toEqual({ name: "session_flash_messages" });
   expect(migrated.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audit_events'").get()).toEqual({ name: "audit_events" });
   expect(migrated.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'fulfilled_item_sales'").get()).toEqual({ name: "fulfilled_item_sales" });

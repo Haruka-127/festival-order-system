@@ -105,6 +105,12 @@ details.editor[open]>summary{background:var(--green-soft);border-color:var(--gre
 .dialog-close{width:38px;height:38px;padding:0;border:1px solid var(--line);border-radius:50%;background:#fff;color:var(--ink);font-size:22px;line-height:1}
 .editor-dialog .editor-panel{min-width:0;margin:0;padding:18px;border:0;background:#fff}
 .dialog-footer{display:flex;justify-content:flex-end;padding-top:4px}
+#order-reset-dialog .dialog-footer{gap:8px;flex-wrap:wrap}
+#order-reset-preview{line-height:1.8}
+#order-reset-result:empty{display:none}
+#tab-archives .card>p{margin:10px 0;line-height:1.7}
+#tab-archives .row-actions{justify-content:flex-start;margin-top:12px}
+#tab-archives table{min-width:580px}
 .location-card-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .location-card-head h2{margin-bottom:3px}
 .add-panel{margin-bottom:16px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-m)}

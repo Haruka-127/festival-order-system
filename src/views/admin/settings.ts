@@ -27,6 +27,7 @@ export function renderSettingsSection(settings: AdminOrderSettings, locations: A
       </form>
     </div>
     <div class="settings-links" aria-label="その他の設定">
+      <a class="settings-link" href="/admin/settings/archives"><span><strong>注文履歴・バックアップ</strong><small>履歴を保存して完全リセット・過去の注文を閲覧</small></span><span aria-hidden="true">›</span></a>
       <a class="settings-link" href="/admin/settings/locations"><span><strong>提供場所の設定</strong><small>${locations.length}か所の提供場所を管理</small></span><span aria-hidden="true">›</span></a>
       <a class="settings-link" href="/admin/settings/history"><span><strong>操作履歴</strong><small>注文や提供状態の変更を確認</small></span><span aria-hidden="true">›</span></a>
       <a class="settings-link" href="/admin/settings/advanced"><span><strong>詳細設定・データ管理</strong><small>注文上限、番号、バックアップなど</small></span><span aria-hidden="true">›</span></a>

@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { getOrderGeneration } from "../services/order-archives";
 import { getAll, getDb, getOne, runSql } from "../db/database";
 import { authMiddleware, type UserInfo } from "../middleware/auth";
 import { isValidWebSocketOrigin } from "../security";
@@ -62,9 +63,10 @@ export const providerRoutes = new Elysia()
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   })
-  .get("/api/provider/fulfillments", ({ getUser }) => {
+  .get("/api/provider/fulfillments", ({ getUser, set }) => {
     const user = requireProvider(getUser(), true);
     if (user instanceof Response) return user;
+    set.headers["X-Order-Generation"] = String(getOrderGeneration());
     return getProviderTasks(user.fulfillmentLocationId!);
   })
   .patch("/api/provider/fulfillments/:id/status", ({ params: { id }, body, set, getUser }) => {
@@ -154,7 +156,7 @@ export const providerRoutes = new Elysia()
       const user = (ws.data as unknown as { getUser: () => UserInfo | null }).getUser();
       if (!user?.fulfillmentLocationId) return ws.close();
       wsManager.addProviderClient(user.fulfillmentLocationId, ws as any);
-      ws.send(JSON.stringify({ type: "provider_update", tasks: getProviderTasks(user.fulfillmentLocationId) }));
+      ws.send(JSON.stringify({ type: "provider_update", tasks: getProviderTasks(user.fulfillmentLocationId), order_generation: getOrderGeneration() }));
     },
     close(ws) { wsManager.remove(ws as any); },
   });

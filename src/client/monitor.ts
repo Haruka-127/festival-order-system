@@ -2,7 +2,7 @@ export {};
 
 type BoardEntry = { fulfillment_id: string; display_number: number; display_number_date?: string };
 type BoardLocation = { id: number; name: string; waiting: BoardEntry[]; calling: BoardEntry[] };
-type Board = { locations: BoardLocation[] };
+type Board = { locations: BoardLocation[]; order_generation?: number };
 type LocatedEntry = BoardEntry & { location_id: number; location_name: string };
 
 const PAGE_SIZE = 10;
@@ -79,6 +79,7 @@ function render(): void {
 }
 
 function applyBoard(next: Board, animate = true): void {
+  if ((next.order_generation ?? 0) < (board.order_generation ?? 0)) return;
   const nextKeys = new Set<string>();
   for (const location of next.locations) for (const key of ["waiting", "calling"] as const) for (const entry of location[key]) nextKeys.add(`${key}:${entry.fulfillment_id}`);
   newIds = animate ? new Set([...nextKeys].filter(key => !knownKeys.has(key)).map(key => key.slice(key.indexOf(":") + 1))) : new Set();
@@ -104,7 +105,7 @@ async function load(): Promise<void> {
     const response = await fetch("/api/monitor/board");
     if (response.ok) {
       const next = await response.json() as Board;
-      applyBoard({ locations: Array.isArray(next.locations) ? next.locations : [] }, knownKeys.size > 0);
+      applyBoard({ locations: Array.isArray(next.locations) ? next.locations : [], order_generation: next.order_generation }, knownKeys.size > 0);
       setConnection(socket?.readyState === WebSocket.OPEN ? "リアルタイム接続済み" : "同期済み", false);
     }
   } catch {
@@ -121,8 +122,8 @@ function connect(): void {
   socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); scheduleSync(); };
   socket.onmessage = event => {
     try {
-      const data = JSON.parse(String(event.data)) as { type?: string; locations?: BoardLocation[] };
-      if (data.type === "monitor_update") applyBoard({ locations: Array.isArray(data.locations) ? data.locations : [] });
+      const data = JSON.parse(String(event.data)) as { type?: string; locations?: BoardLocation[]; order_generation?: number };
+      if (data.type === "monitor_update") applyBoard({ locations: Array.isArray(data.locations) ? data.locations : [], order_generation: data.order_generation });
     } catch (error) {
       console.warn("Invalid monitor WebSocket message", error);
     }

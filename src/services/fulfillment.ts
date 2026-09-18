@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { getAll, getDb, getOne, runSql } from "../db/database";
 import { utcNowIso } from "./time";
+import { getOrderGeneration } from "./order-archives";
 
 export type MonitorEntry = {
   fulfillment_id: string;
@@ -18,7 +19,7 @@ export type MonitorLocation = {
   calling: MonitorEntry[];
 };
 
-export type MonitorBoard = { locations: MonitorLocation[] };
+export type MonitorBoard = { locations: MonitorLocation[]; order_generation: number };
 
 export type CustomerFulfillment = {
   id: string;
@@ -82,7 +83,7 @@ export function getMonitorBoard(db = getDb()): MonitorBoard {
     if (row.status === "preparing") location.waiting.push(entry);
     else location.calling.push(entry);
   }
-  return { locations: boardLocations };
+  return { locations: boardLocations, order_generation: getOrderGeneration(db) };
 }
 
 export function getCustomerOrderByToken(token: string, db = getDb()): CustomerOrder | null {

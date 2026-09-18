@@ -45,6 +45,7 @@ export function eventDescription(event: AdminEvent): string {
         location_created: "提供場所を追加", location_settings_changed: "提供場所設定を変更",
         location_availability_changed: "提供場所の稼働状態を変更", order_settings_changed: "注文設定を変更",
         display_numbers_reset: "受付番号をリセット", backup_created: "バックアップを作成",
+        order_history_reset: "注文履歴をバックアップして完全リセット",
       };
       return labels[action] ?? "管理設定を変更";
     } catch { return "管理設定を変更"; }

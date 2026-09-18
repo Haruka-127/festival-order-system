@@ -5,13 +5,13 @@ import { formatDateTime } from "../services/time";
 import { todayDate } from "../services/numbering";
 
 type Item = { id: number; name: string; sold_out: number; sort_order: number; location_name?: string; max_quantity_per_order?: number | null };
-export function staffPage(items: Item[], orders: CashierOrder[], _securityNonce = ""): string {
+export function staffPage(items: Item[], orders: CashierOrder[], _securityNonce = "", orderGeneration = 0): string {
 return pageDocument({
     title: "店員画面 - 文化祭飲食システム",
     viewport: "width=device-width, initial-scale=1.0",
     stylesheet: "staff",
     script: "staff",
-    bodyAttributes: { "data-current-date": todayDate(), "data-display-digits": String(config.displayNumberDigits) },
+    bodyAttributes: { "data-current-date": todayDate(), "data-display-digits": String(config.displayNumberDigits), "data-order-generation": String(orderGeneration) },
     content: `
 <a class="skip-link" href="#main-content">本文へ移動</a>
 <header class="topbar">

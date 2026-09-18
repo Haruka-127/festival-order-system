@@ -8,6 +8,7 @@ const digits = Number(document.body.dataset.displayDigits ?? "3");
 let socket: WebSocket | null = null;
 let reconnectDelay = 3000;
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let orderGeneration = 0;
 
 function requiredElement(id: string): HTMLElement {
   const element = document.getElementById(id);
@@ -57,7 +58,9 @@ function taskElement(task: Task): HTMLElement {
   return card;
 }
 
-function render(tasks: Task[]): void {
+function render(tasks: Task[], generation = orderGeneration): void {
+  if (generation < orderGeneration) return;
+  orderGeneration = generation;
   const root = requiredElement("task-list");
   const lanes: { status: TaskStatus; label: string; empty: string }[] = [
     { status: "preparing", label: "準備中", empty: "準備中の注文はありません" },
@@ -92,7 +95,7 @@ async function loadTasks(): Promise<void> {
   try {
     const response = await fetch("/api/provider/fulfillments");
     if (response.status === 401) { location.href = "/login"; return; }
-    if (response.ok) { render(await response.json() as Task[]); setConnection("同期済み", false); }
+    if (response.ok) { render(await response.json() as Task[], Number(response.headers.get("X-Order-Generation") ?? "0")); setConnection("同期済み", false); }
   } catch { setConnection("オフライン・再接続中", true); }
   finally { scheduleSync(); }
 }
@@ -124,8 +127,8 @@ function connect(): void {
   socket.onopen = () => { reconnectDelay = 3000; setConnection("リアルタイム接続済み", false); scheduleSync(); };
   socket.onmessage = event => {
     try {
-      const data = JSON.parse(String(event.data)) as { type?: string; tasks?: Task[] };
-      if (data.type === "provider_update") render(data.tasks ?? []);
+      const data = JSON.parse(String(event.data)) as { type?: string; tasks?: Task[]; order_generation?: number };
+      if (data.type === "provider_update") render(data.tasks ?? [], data.order_generation);
     } catch (error) { console.warn("Invalid provider WebSocket message", error); }
   };
   socket.onclose = () => { socket = null; setConnection("再接続中", true); scheduleSync(); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };

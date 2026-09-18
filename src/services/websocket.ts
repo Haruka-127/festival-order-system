@@ -76,6 +76,16 @@ export class WebSocketManager {
     if (!clients) return;
     this.send(clients, msg, "provider");
   }
+
+  broadcastOrderReset(generation: number) {
+    for (const clients of this.orderClients.values()) {
+      this.send(clients, JSON.stringify({ type: "order_reset" }), "order");
+    }
+    this.orderClients.clear();
+    for (const locationId of this.providerClients.keys()) {
+      this.broadcastToProvider(locationId, { tasks: [], order_generation: generation });
+    }
+  }
 }
 
 export const wsManager = new WebSocketManager();

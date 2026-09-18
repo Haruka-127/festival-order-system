@@ -1,5 +1,9 @@
 import { Html } from "@elysia/html";
 
+// Fixed asset filenames are cached in production. A fresh server process must
+// serve fresh clients, particularly when the order-generation protocol changes.
+const assetVersion = crypto.randomUUID();
+
 type PageDocumentProps = {
   title: string;
   viewport: string;
@@ -17,11 +21,11 @@ export function pageDocument({ title, viewport, stylesheet, script, bodyAttribut
         <meta charset="UTF-8" />
         <meta name="viewport" content={viewport} />
         <title safe>{title}</title>
-        <link rel="stylesheet" href={`/assets/${stylesheet}.css`} />
+        <link rel="stylesheet" href={`/assets/${stylesheet}.css?v=${assetVersion}`} />
       </head>
       <body {...bodyAttributes}>
         {content}
-        {script ? <script type="module" src={`/assets/${script}.js`}></script> : ""}
+        {script ? <script type="module" src={`/assets/${script}.js?v=${assetVersion}`}></script> : ""}
       </body>
     </html>
   );

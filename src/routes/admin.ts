@@ -4,9 +4,11 @@ import { adminLocationRoutes } from "./admin/locations";
 import { adminOperationRoutes } from "./admin/operations";
 import { adminPageRoutes } from "./admin/pages";
 import { adminUserRoutes } from "./admin/users";
+import { adminArchiveRoutes } from "./admin/archives";
 
 export const adminRoutes = new Elysia()
   .use(adminPageRoutes)
+  .use(adminArchiveRoutes)
   .use(adminItemRoutes)
   .use(adminUserRoutes)
   .use(adminLocationRoutes)

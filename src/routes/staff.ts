@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { getOrderGeneration } from "../services/order-archives";
 import { getAll, getDb, getOne, runSql } from "../db/database";
 import { authMiddleware, type UserInfo } from "../middleware/auth";
 import { config } from "../config";
@@ -111,12 +112,17 @@ export const staffRoutes = new Elysia()
     const user = requireCashier(context.getUser());
     if (user instanceof Response) return user;
     const { securityNonce } = context as typeof context & { securityNonce: string };
-    return new Response(staffPage(getStaffItems(), getCashierOrders(), securityNonce), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    return new Response(staffPage(getStaffItems(), getCashierOrders(), securityNonce, getOrderGeneration()), { headers: { "Content-Type": "text/html; charset=utf-8" } });
   })
   .post("/api/staff/orders", ({ body, set, getUser }) => {
     const user = requireCashier(getUser(), true);
     if (user instanceof Response) return user;
-    const payload = (body ?? {}) as { items?: RequestedItem[]; client_request_id?: string };
+    const payload = (body ?? {}) as { items?: RequestedItem[]; client_request_id?: string; order_generation?: number };
+    const generation = getOrderGeneration();
+    if ((payload.order_generation ?? 0) !== generation) {
+      set.status = 409;
+      return { error: "注文履歴がリセットされました。カートを確認し直してください", code: "orders_reset", order_generation: generation };
+    }
     const items = payload.items;
     if (!Array.isArray(items) || items.length === 0 || items.length > 100) { set.status = 400; return { error: "商品を選択してください" }; }
     if (payload.client_request_id !== undefined && (typeof payload.client_request_id !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(payload.client_request_id))) {
@@ -144,6 +150,7 @@ export const staffRoutes = new Elysia()
     const affectedLocations = new Set<number>();
 
     const createOrder = db.transaction(() => {
+      if (getOrderGeneration(db) !== generation) throw new Error("注文履歴がリセットされました");
       const settings = getOne<{
         ordering_enabled: number;
         order_open_time: string | null;
@@ -234,6 +241,11 @@ export const staffRoutes = new Elysia()
     let displayNumber: number;
     try { displayNumber = createOrder(); }
     catch (error) {
+      const currentGeneration = getOrderGeneration(db);
+      if (currentGeneration !== generation) {
+        set.status = 409;
+        return { error: "注文履歴がリセットされました。カートを確認し直してください", code: "orders_reset", order_generation: currentGeneration };
+      }
       if (payload.client_request_id) {
         const existing = getOne<{ id: string; display_number: number; token: string }>(db, "SELECT id, display_number, token FROM orders WHERE created_by = ? AND client_request_id = ?", user.id, payload.client_request_id);
         if (existing) return { ...existing, display_number_padded: config.displayNumberPad(existing.display_number), duplicated: true };
@@ -245,7 +257,7 @@ export const staffRoutes = new Elysia()
     for (const locationId of affectedLocations) wsManager.broadcastToProvider(locationId, { tasks: getProviderTasks(locationId) });
     wsManager.broadcastToMonitor(getMonitorBoard());
     set.status = 201;
-    return { id: orderId, display_number: displayNumber, display_number_padded: config.displayNumberPad(displayNumber), token };
+    return { id: orderId, display_number: displayNumber, display_number_padded: config.displayNumberPad(displayNumber), token, order_generation: generation };
   })
   .patch("/api/staff/orders/:id/status", ({ params: { id }, body, set, getUser }) => {
     const user = requireCashier(getUser(), true);
@@ -298,9 +310,10 @@ export const staffRoutes = new Elysia()
     if (customer) wsManager.broadcastToOrder(order.token, customer);
     return { status: "cancelled" };
   })
-  .get("/api/staff/orders", ({ getUser }) => {
+  .get("/api/staff/orders", ({ getUser, set }) => {
     const user = requireCashier(getUser(), true);
     if (user instanceof Response) return user;
+    set.headers["X-Order-Generation"] = String(getOrderGeneration());
     return getCashierOrders();
   })
   .get("/api/staff/items", ({ getUser }) => {

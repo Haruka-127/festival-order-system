@@ -51,11 +51,11 @@ export const adminOperationRoutes = new Elysia()
     const target = getOne<{ count: number; oldest: string | null; newest: string | null }>(db, "SELECT COUNT(*) AS count, MIN(updated_at) AS oldest, MAX(updated_at) AS newest FROM orders WHERE status IN ('delivered', 'cancelled') AND julianday(updated_at) < julianday('now', ?)", cutoffModifier);
     return { retention_days: retentionDays, count: target?.count ?? 0, oldest: target?.oldest ?? null, newest: target?.newest ?? null };
   })
-  .post("/api/admin/backup", async ({ getUser, set }) => {
+  .post("/api/admin/backup", ({ getUser, set }) => {
     const actor = requireAdmin(getUser());
     if (actor instanceof Response) return actor;
     try {
-      const backup = await createDatabaseBackup();
+      const backup = createDatabaseBackup();
       recordAdminAction(getDb(), actor, "backup_created", { filename: backup.filename, bytes: backup.bytes });
       return { success: true, ...backup };
     } catch (error) {
@@ -64,7 +64,7 @@ export const adminOperationRoutes = new Elysia()
       return { error: "バックアップを作成できませんでした" };
     }
   })
-  .post("/api/admin/cleanup", async ({ getUser, set }) => {
+  .post("/api/admin/cleanup", ({ getUser, set }) => {
     const actor = requireAdmin(getUser());
     if (actor instanceof Response) return actor;
     const db = getDb();
@@ -74,7 +74,7 @@ export const adminOperationRoutes = new Elysia()
     if (pendingCount === 0) return { deleted: 0, retention_days: retentionDays, backup: null };
     let backup;
     try {
-      backup = await createDatabaseBackup(db);
+      backup = createDatabaseBackup(db);
     } catch (error) {
       console.error(JSON.stringify({ level: "error", event: "cleanup_backup_failed", error: error instanceof Error ? error.message : String(error) }));
       set.status = 503;

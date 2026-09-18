@@ -9,6 +9,16 @@ const token = document.body.dataset.orderToken ?? "";
 let socket: WebSocket | null = null;
 let reconnectDelay = 3000;
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let orderRemoved = false;
+
+function showRemovedOrder(): void {
+  orderRemoved = true;
+  if (syncTimer) clearTimeout(syncTimer);
+  socket?.close();
+  requiredElement("overall").textContent = "この注文の公開表示は終了しました";
+  requiredElement("fulfillments").replaceChildren();
+  requiredElement("connection").textContent = "注文履歴が整理されました。必要な場合はスタッフにお問い合わせください";
+}
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -58,17 +68,24 @@ function setConnection(message: string, offline: boolean): void {
 async function load(): Promise<void> {
   try {
     const response = await fetch(`/api/order/${encodeURIComponent(token)}`);
-    if (response.ok) { render(await response.json() as OrderUpdate); setConnection("同期済み", false); }
+    if (response.status === 404 || response.status === 410) { showRemovedOrder(); return; }
+    if (orderRemoved) return;
+    if (response.ok) {
+      const data = await response.json() as OrderUpdate;
+      if (!orderRemoved) { render(data); setConnection("同期済み", false); }
+    }
   } catch { setConnection("オフライン・再接続中", true); }
   finally { scheduleSync(); }
 }
 
 function scheduleSync(): void {
+  if (orderRemoved) return;
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(load, socket?.readyState === WebSocket.OPEN ? 60_000 : 15_000);
 }
 
 function connect(): void {
+  if (orderRemoved) return;
   if (socket && socket.readyState <= WebSocket.OPEN) return;
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${location.host}/ws/order/${encodeURIComponent(token)}`);
@@ -76,10 +93,11 @@ function connect(): void {
   socket.onmessage = event => {
     try {
       const data = JSON.parse(String(event.data)) as OrderUpdate & { type?: string };
-      if (data.type === "order_update") render(data);
+      if (data.type === "order_reset") showRemovedOrder();
+      else if (data.type === "order_update" && !orderRemoved) render(data);
     } catch (error) { console.warn("Invalid order WebSocket message", error); }
   };
-  socket.onclose = () => { socket = null; setConnection("再接続中", true); scheduleSync(); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
+  socket.onclose = () => { socket = null; if (orderRemoved) return; setConnection("再接続中", true); scheduleSync(); setTimeout(connect, reconnectDelay); reconnectDelay = Math.min(reconnectDelay * 2, 30000); };
   socket.onerror = () => socket?.close();
 }
 

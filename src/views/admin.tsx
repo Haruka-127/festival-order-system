@@ -5,6 +5,7 @@ import { renderOrdersSection } from "./admin/orders";
 import { renderAdvancedSection, renderHistorySection, renderLocationsSection, renderSettingsSection } from "./admin/settings";
 import { renderStatusSection } from "./admin/status";
 import { renderUsersSection } from "./admin/users";
+import { renderArchivesSection } from "./admin/archives";
 import type { AdminEvent, AdminItem, AdminItemSales, AdminLocation, AdminOrder, AdminOrderSettings, AdminPageState, AdminSection, AdminStatusSummary, AdminUser } from "./admin/types";
 
 export type { AdminSection } from "./admin/types";
@@ -32,6 +33,7 @@ function renderActiveSection(
   if (section === "locations") return renderLocationsSection(locations);
   if (section === "history") return renderHistorySection(events, pageState.pagination);
   if (section === "advanced") return renderAdvancedSection(settings, currentNum);
+  if (section === "archives") return renderArchivesSection(pageState);
   return renderSettingsSection(settings, locations);
 }
 
@@ -59,7 +61,7 @@ export function adminPage(
     total_delivered_orders: orders.filter(order => order.status === "delivered").length,
     total_units: 0,
   };
-  const activeMainSection = ["locations", "history", "advanced"].includes(activeSection) ? "settings" : activeSection;
+  const activeMainSection = ["locations", "history", "advanced", "archives"].includes(activeSection) ? "settings" : activeSection;
   const tabClass = (section: string) => `tab${activeMainSection === section ? " active" : ""}`;
 
   return pageDocument({

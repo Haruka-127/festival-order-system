@@ -1,4 +1,5 @@
 // Browser entry point extracted from the server-rendered page.
+import "./order-archives";
 export {};
 type FlashMessage = { message: string; kind: "success" | "error" };
 type CleanupPreview = { count: number; retention_days: number; oldest?: string | null; newest?: string | null };

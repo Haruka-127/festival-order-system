@@ -10,8 +10,8 @@ async function source(path: string): Promise<string> {
 }
 
 function expectExternalAssets(html: string, page: string): void {
-  expect(html).toContain(`<link rel="stylesheet" href="/assets/${page}.css"/>`);
-  expect(html).toContain(`<script type="module" src="/assets/${page}.js"></script>`);
+  expect(html).toMatch(new RegExp(`<link rel="stylesheet" href="/assets/${page}\\.css\\?v=[a-f0-9-]+"/>`));
+  expect(html).toMatch(new RegExp(`<script type="module" src="/assets/${page}\\.js\\?v=[a-f0-9-]+"></script>`));
   expect(html).not.toContain("<style>");
   expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/i);
   expect(html).not.toMatch(/\son(?:click|change|submit|input|keydown)=/i);
