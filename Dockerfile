@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS build
+FROM oven/bun:1.4.3-alpine AS build
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY src ./src
 COPY tsconfig.json ./
 RUN bun run build
 
-FROM oven/bun:1.3.14-alpine AS runtime
+FROM oven/bun:1.4.3-alpine AS runtime
 
 WORKDIR /app
 
